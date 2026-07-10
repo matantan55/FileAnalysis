@@ -17,6 +17,8 @@ class JsonReporter:
 
         # Convert enum types to their string values in the JSON output
         data["risk_level"] = result.risk_level.value
+        data["nn_risk_level"] = result.nn_risk_level.value
+        data["nn_score"] = result.nn_score
         data["scoring_method"] = result.scoring_method
         data["nn_confidence"] = result.nn_confidence
 
