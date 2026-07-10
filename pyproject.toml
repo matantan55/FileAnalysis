@@ -1,0 +1,27 @@
+[project]
+name = "fileanalysis"
+version = "1.0.0"
+description = "CLI-based malware file analysis and threat assessment tool"
+readme = "README.md"
+requires-python = ">=3.10"
+dependencies = [
+    "rich>=13.7",
+    "click>=8.1",
+    "pefile>=2023.2.7",
+    "yara-python>=4.5",
+    "puremagic>=2.2.0",
+    "lief>=0.15",
+    "requests>=2.31",
+    "ppdeep>=20260221",
+    "numpy>=1.24",
+]
+
+[project.optional-dependencies]
+nn = ["torch>=2.0"]
+
+[project.scripts]
+fileanalysis = "fileanalysis.cli:cli"
+
+[build-system]
+requires = ["setuptools>=68.0"]
+build-backend = "setuptools.backends._legacy:_Backend"
