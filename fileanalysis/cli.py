@@ -32,8 +32,7 @@ from fileanalysis.scoring.nn_model import NNThreatScorer
 @click.option("--vt-api-key", envvar="VT_API_KEY", help="VirusTotal API Key (also checks VT_API_KEY env var).")
 @click.option("--json", "json_format", is_flag=True, help="Output results in JSON format.")
 @click.option("--yara-rules", type=click.Path(file_okay=False), help="Custom directory containing YARA rules (.yar/.yara).")
-@click.option("--nn", "use_nn", is_flag=True, help="Use neural network model for threat scoring instead of heuristic rules.")
-def cli(file_path: str, vt: bool, vt_api_key: str | None, json_format: bool, yara_rules: str | None, use_nn: bool) -> None:
+def cli(file_path: str, vt: bool, vt_api_key: str | None, json_format: bool, yara_rules: str | None) -> None:
     """Analyze a file for malicious indicators, capabilities, and threat environment impact."""
     # 1. Load file and initialize result
     try:
@@ -88,17 +87,16 @@ def cli(file_path: str, vt: bool, vt_api_key: str | None, json_format: bool, yar
         else:
             result.errors.append("VirusTotal check requested but no API key configured.")
 
-    # 7. Threat scoring and RiskLevel determination
-    if use_nn:
-        try:
-            scorer = NNThreatScorer()
-        except FileNotFoundError as e:
-            click.secho(f"[-] {e}", fg="yellow", err=True)
-            click.secho("[*] Falling back to heuristic scorer.", fg="yellow", err=True)
-            scorer = ThreatScorer()
-    else:
-        scorer = ThreatScorer()
-    scorer.calculate_score(result)
+    # 7. Threat scoring — always run heuristic, then also run NN if model is available
+    heuristic_scorer = ThreatScorer()
+    heuristic_scorer.calculate_score(result)
+
+    try:
+        nn_scorer = NNThreatScorer()
+        nn_scorer.calculate_score(result)
+        result.scoring_method = "dual"
+    except (FileNotFoundError, Exception) as e:
+        result.scoring_method = "heuristic"
 
     # 8. Render report
     if json_format:

@@ -4,22 +4,56 @@
 
 Trained the `ThreatNet` neural network on **real malware samples** from the [DikeDataset](https://github.com/iosifache/DikeDataset), entirely inside an isolated Docker container to protect the local environment.
 
+## How to Run FileAnalysis
+
+> **You must be in the project root directory** (`FileAnalysis/`) for all commands to work.
+
+### Step 1: Activate the virtual environment
+
+```bash
+cd /Users/matanmishali/AntiGravity/FileAnalysis
+source .venv/bin/activate
+```
+
+### Step 2: Scan a file
+
+```bash
+python -m fileanalysis.cli /path/to/file
+```
+
+**Example:**
+```bash
+python -m fileanalysis.cli /usr/bin/zip
+python -m fileanalysis.cli ~/Downloads/suspicious.exe
+python -m fileanalysis.cli /Users/matanmishali/eh/look_mom_no_boot/main.exe
+```
+
+### Common mistakes
+
+| ❌ Wrong | ✅ Right |
+|---------|---------|
+| Running from `~/` or any other directory | `cd` into `FileAnalysis/` first |
+| `python -m fileanalysis.cli` (without venv) | `source .venv/bin/activate` first |
+| `fileanalysis scan file.exe` (package not pip-installed) | Use `python -m fileanalysis.cli file.exe` |
+
+---
+
 ## Files Created/Modified
 
-### [Dockerfile.sandbox](file:///Users/matanmishali/AntiGravity/FileAnalysis/Dockerfile.sandbox)
+### [Dockerfile.sandbox](Dockerfile.sandbox)
 - Python 3.11 slim image with git, build-essential, libmagic
 - Creates `/app/dataset` (isolated from host mount) for malware storage
 - Installs CPU-only PyTorch + all project dependencies
 - Sets `PYTHONPATH=/workspace` to make `fileanalysis` importable
 
-### [sandbox_train.py](file:///Users/matanmishali/AntiGravity/FileAnalysis/fileanalysis/scoring/sandbox_train.py)
+### [sandbox_train.py](fileanalysis/scoring/sandbox_train.py)
 - Clones DikeDataset into `/app/dataset` (inside container only)
 - Runs all 8 analyzers + YARA + CapabilityMapper on each file
 - Extracts 31-dimensional feature vectors via `FeatureExtractor`
 - Trains ThreatNet for 50 epochs with Rich progress bars
 - Saves `threat_model.pt` to the mounted workspace
 
-### [requirements-sandbox.txt](file:///Users/matanmishali/AntiGravity/FileAnalysis/requirements-sandbox.txt)
+### [requirements-sandbox.txt](requirements-sandbox.txt)
 - Pinned CPU-only PyTorch via `--extra-index-url` to avoid downloading ~900MB of CUDA libraries
 
 ## Training Results
@@ -41,13 +75,6 @@ The loss dropped steadily from **0.1071** (epoch 10) to **0.0299** (epoch 50), i
 cd /Users/matanmishali/AntiGravity/FileAnalysis
 docker build -t fileanalysis-sandbox -f Dockerfile.sandbox .
 docker run --rm -v "$(pwd)":/workspace fileanalysis-sandbox
-```
-
-## How to Use the Trained Model
-
-```bash
-# Scan a file using the neural network scorer
-fileanalysis scan suspicious.exe --nn
 ```
 
 ## Security Notes

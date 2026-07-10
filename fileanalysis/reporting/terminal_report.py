@@ -32,12 +32,23 @@ class TerminalReporter:
         self.console.print(f"[bold]🛡️ Perms:[/] {m.permissions}")
         self.console.print()
 
-        # Risk Score Panel
-        color = self._get_risk_color(result.risk_level)
-        badge = f"[bold {color}]⛔ RISK SCORE: {result.risk_score}/100 — {result.risk_level.value.upper()}[/]"
-        if result.scoring_method == "neural_network":
-            badge += f"  [bold magenta]🧠 Neural Network[/] [dim](confidence: {result.nn_confidence:.2%})[/]"
-        self.console.print(Panel(badge, border_style=color, expand=False))
+        # Risk Score Panel — show both heuristic and NN scores
+        h_color = self._get_risk_color(result.risk_level)
+        badge = f"[bold {h_color}]📊 Heuristic: {result.risk_score}/100 — {result.risk_level.value.upper()}[/]"
+
+        if result.scoring_method == "dual":
+            nn_color = self._get_risk_color(result.nn_risk_level)
+            # Show confidence as certainty in the prediction direction
+            if result.nn_score <= 50:
+                conf_pct = (1.0 - result.nn_confidence) * 100
+                conf_label = "benign"
+            else:
+                conf_pct = result.nn_confidence * 100
+                conf_label = "malicious"
+            badge += f"\n[bold {nn_color}]🧠 Neural Net: {result.nn_score}/100 — {result.nn_risk_level.value.upper()}[/]"
+            badge += f"  [dim]({conf_pct:.1f}% confident {conf_label})[/]"
+
+        self.console.print(Panel(badge, border_style=h_color, expand=False))
         self.console.print()
 
         # Hashes Table

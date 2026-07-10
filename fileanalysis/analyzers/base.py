@@ -149,6 +149,8 @@ class AnalysisResult:
     risk_level: RiskLevel = RiskLevel.CLEAN
     format_info: dict[str, Any] = field(default_factory=dict)
     scoring_method: str = "heuristic"
+    nn_score: float = 0.0
+    nn_risk_level: RiskLevel = RiskLevel.CLEAN
     nn_confidence: float = 0.0
     environment_impact: list[str] = field(default_factory=list)
     errors: list[str] = field(default_factory=list)

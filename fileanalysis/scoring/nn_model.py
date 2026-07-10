@@ -81,10 +81,10 @@ class NNThreatScorer:
         return model
 
     def calculate_score(self, result: AnalysisResult) -> None:
-        """Run NN inference on the AnalysisResult and set score/level.
+        """Run NN inference on the AnalysisResult and set nn_score/nn_risk_level.
 
-        This method has the same signature as ThreatScorer.calculate_score
-        so they are interchangeable in the CLI pipeline.
+        This writes to the nn_* fields on AnalysisResult so it can coexist
+        with the heuristic scorer's risk_score/risk_level fields.
         """
         # Extract features
         features = self.extractor.extract(result)
@@ -99,18 +99,18 @@ class NNThreatScorer:
         final_score = round(confidence * 100.0, 1)
         final_score = max(0.0, min(100.0, final_score))
 
-        result.risk_score = final_score
+        result.nn_score = final_score
         result.nn_confidence = round(confidence, 4)
-        result.scoring_method = "neural_network"
 
         # Determine risk level (same thresholds as heuristic)
         if final_score <= 20.0:
-            result.risk_level = RiskLevel.CLEAN
+            result.nn_risk_level = RiskLevel.CLEAN
         elif final_score <= 40.0:
-            result.risk_level = RiskLevel.LOW
+            result.nn_risk_level = RiskLevel.LOW
         elif final_score <= 60.0:
-            result.risk_level = RiskLevel.MODERATE
+            result.nn_risk_level = RiskLevel.MODERATE
         elif final_score <= 80.0:
-            result.risk_level = RiskLevel.HIGH
+            result.nn_risk_level = RiskLevel.HIGH
         else:
-            result.risk_level = RiskLevel.CRITICAL
+            result.nn_risk_level = RiskLevel.CRITICAL
+
