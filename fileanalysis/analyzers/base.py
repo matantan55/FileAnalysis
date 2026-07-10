@@ -1,7 +1,6 @@
 """Abstract base class for all file analyzers and shared data structures."""
 
 from __future__ import annotations
-
 import abc
 from dataclasses import dataclass, field
 from enum import Enum

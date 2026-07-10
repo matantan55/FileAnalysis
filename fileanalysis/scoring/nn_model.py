@@ -5,8 +5,9 @@ from __future__ import annotations
 import logging
 from pathlib import Path
 from typing import TYPE_CHECKING
-
 import numpy as np
+import torch
+import torch.nn as nn
 
 if TYPE_CHECKING:
     from fileanalysis.analyzers.base import AnalysisResult
@@ -20,52 +21,30 @@ logger = logging.getLogger(__name__)
 DEFAULT_MODEL_PATH = Path(__file__).parent / "threat_model.pt"
 
 
-def _import_torch():
-    """Lazily import torch, raising a clear message if unavailable."""
-    try:
-        import torch
-        return torch
-    except ImportError:
-        raise ImportError(
-            "PyTorch is required for neural network scoring. "
-            "Install it with: pip install torch>=2.0"
+class ThreatNet(nn.Module):
+    """Multi-layer perceptron for malware threat scoring.
+
+    Input:  31-dimensional feature vector from FeatureExtractor
+    Output: Single scalar in [0, 1] representing threat probability
+    """
+
+    def __init__(self) -> None:
+        super().__init__()
+        self.network = nn.Sequential(
+            nn.Linear(NUM_FEATURES, 64),
+            nn.ReLU(),
+            nn.Dropout(0.3),
+            nn.Linear(64, 32),
+            nn.ReLU(),
+            nn.Dropout(0.3),
+            nn.Linear(32, 16),
+            nn.ReLU(),
+            nn.Linear(16, 1),
+            nn.Sigmoid(),
         )
 
-
-def _build_model(torch_module):
-    """Construct the ThreatNet model architecture.
-
-    Architecture: 31 → 64 → 32 → 16 → 1 with ReLU, Dropout, and Sigmoid output.
-    """
-    torch = torch_module
-    nn = torch.nn
-
-    class ThreatNet(nn.Module):
-        """Multi-layer perceptron for malware threat scoring.
-
-        Input:  31-dimensional feature vector from FeatureExtractor
-        Output: Single scalar in [0, 1] representing threat probability
-        """
-
-        def __init__(self) -> None:
-            super().__init__()
-            self.network = nn.Sequential(
-                nn.Linear(NUM_FEATURES, 64),
-                nn.ReLU(),
-                nn.Dropout(0.3),
-                nn.Linear(64, 32),
-                nn.ReLU(),
-                nn.Dropout(0.3),
-                nn.Linear(32, 16),
-                nn.ReLU(),
-                nn.Linear(16, 1),
-                nn.Sigmoid(),
-            )
-
-        def forward(self, x: torch.Tensor) -> torch.Tensor:
-            return self.network(x)
-
-    return ThreatNet
+    def forward(self, x: torch.Tensor) -> torch.Tensor:
+        return self.network(x)
 
 
 class NNThreatScorer:
@@ -76,14 +55,13 @@ class NNThreatScorer:
     """
 
     def __init__(self, model_path: str | Path | None = None) -> None:
-        self.torch = _import_torch()
+        self.torch = torch
         self.model_path = Path(model_path) if model_path else DEFAULT_MODEL_PATH
         self.extractor = FeatureExtractor()
         self.model = self._load_model()
 
     def _load_model(self):
         """Load the ThreatNet model with pre-trained weights."""
-        ThreatNet = _build_model(self.torch)
         model = ThreatNet()
 
         if not self.model_path.exists():

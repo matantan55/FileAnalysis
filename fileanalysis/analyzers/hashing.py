@@ -1,11 +1,9 @@
 """Cryptographic hash computation for file analysis."""
 
 from __future__ import annotations
-
 import hashlib
 import pefile
 import ppdeep
-
 from fileanalysis.analyzers.base import AnalysisResult, BaseAnalyzer, HashResult
 
 

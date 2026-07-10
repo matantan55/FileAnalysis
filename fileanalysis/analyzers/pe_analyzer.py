@@ -1,11 +1,8 @@
 """Windows PE (EXE/DLL) binary analyzer."""
 
 from __future__ import annotations
-
 from datetime import datetime, timezone
-
 import pefile
-
 from fileanalysis.analyzers.base import (
     AnalysisResult,
     BaseAnalyzer,

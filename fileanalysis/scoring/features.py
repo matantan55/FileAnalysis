@@ -1,12 +1,9 @@
 """Feature extraction layer: converts AnalysisResult → fixed-length numeric vector."""
 
 from __future__ import annotations
-
 import math
 from typing import TYPE_CHECKING
-
 import numpy as np
-
 if TYPE_CHECKING:
     from fileanalysis.analyzers.base import AnalysisResult
 

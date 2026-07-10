@@ -16,8 +16,12 @@ import sys
 from pathlib import Path
 
 import numpy as np
+import torch
+import torch.nn as nn
+from torch.utils.data import DataLoader, TensorDataset
 
 from fileanalysis.scoring.features import NUM_FEATURES
+from fileanalysis.scoring.nn_model import ThreatNet
 
 
 def _generate_synthetic_dataset(n_samples: int, seed: int = 42) -> tuple[np.ndarray, np.ndarray]:
@@ -210,16 +214,6 @@ def train(
     Returns:
         Path to the saved model weights.
     """
-    try:
-        import torch
-        import torch.nn as nn
-        from torch.utils.data import DataLoader, TensorDataset
-    except ImportError:
-        print("ERROR: PyTorch is required for training. Install with: pip install torch>=2.0")
-        sys.exit(1)
-
-    from fileanalysis.scoring.nn_model import _build_model
-
     torch.manual_seed(seed)
     save_path = Path(output_path) if output_path else Path(__file__).parent / "threat_model.pt"
 
@@ -251,7 +245,6 @@ def train(
     val_loader = DataLoader(val_ds, batch_size=batch_size)
 
     # Build model
-    ThreatNet = _build_model(torch)
     model = ThreatNet()
     optimizer = torch.optim.Adam(model.parameters(), lr=lr)
     criterion = nn.MSELoss()

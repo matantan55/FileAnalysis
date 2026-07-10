@@ -23,6 +23,7 @@ from fileanalysis.loader import load_file
 from fileanalysis.reporting.json_report import JsonReporter
 from fileanalysis.reporting.terminal_report import TerminalReporter
 from fileanalysis.scoring.scorer import ThreatScorer
+from fileanalysis.scoring.nn_model import NNThreatScorer
 
 
 @click.command()
@@ -90,12 +91,7 @@ def cli(file_path: str, vt: bool, vt_api_key: str | None, json_format: bool, yar
     # 7. Threat scoring and RiskLevel determination
     if use_nn:
         try:
-            from fileanalysis.scoring.nn_model import NNThreatScorer
             scorer = NNThreatScorer()
-        except ImportError as e:
-            click.secho(f"[-] Neural network scoring unavailable: {e}", fg="yellow", err=True)
-            click.secho("[*] Falling back to heuristic scorer.", fg="yellow", err=True)
-            scorer = ThreatScorer()
         except FileNotFoundError as e:
             click.secho(f"[-] {e}", fg="yellow", err=True)
             click.secho("[*] Falling back to heuristic scorer.", fg="yellow", err=True)

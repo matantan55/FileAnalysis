@@ -1,10 +1,8 @@
 """Intelligent string extraction and classification for malware analysis."""
 
 from __future__ import annotations
-
 import base64
 import re
-
 from fileanalysis.analyzers.base import (
     AnalysisResult,
     BaseAnalyzer,

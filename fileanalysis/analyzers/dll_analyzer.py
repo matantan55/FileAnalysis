@@ -1,11 +1,8 @@
 """Dedicated DLL analyzer — extends PE analysis with DLL-specific threat detection."""
 
 from __future__ import annotations
-
 import os
-
 import pefile
-
 from fileanalysis.analyzers.base import (
     AnalysisResult,
     BaseAnalyzer,

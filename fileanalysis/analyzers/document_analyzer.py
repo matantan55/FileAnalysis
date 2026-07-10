@@ -1,9 +1,7 @@
 """Office and PDF document analyzer."""
 
 from __future__ import annotations
-
 import re
-
 from fileanalysis.analyzers.base import (
     AnalysisResult,
     BaseAnalyzer,

@@ -1,9 +1,7 @@
 """macOS Mach-O binary analyzer."""
 
 from __future__ import annotations
-
 import lief
-
 from fileanalysis.analyzers.base import (
     AnalysisResult,
     BaseAnalyzer,

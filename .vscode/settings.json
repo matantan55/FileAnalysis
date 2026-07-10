@@ -1,0 +1,45 @@
+{
+    "tabnine.experimentalAutoImports": true,
+    "explorer.confirmDelete": false,
+	"editor.inlineSuggest.enabled": true,
+    "workbench.iconTheme": "helium-icon-theme",
+    "dad-jokes.duration": "1 min",
+    "resmongraphical.cpuusage.color": "#00FF00",
+    "resmongraphical.mem.color": "",
+    "resmongraphical.battery.color": "",
+    "files.autoSave": "afterDelay",
+    "files.autoSaveDelay": 50,
+    "bracketPairColorizer.depreciation-notice": false,
+    "C_Cpp.updateChannel": "Insiders",
+    "kite.showWelcomeNotificationOnStartup": false,
+    "diffEditor.ignoreTrimWhitespace": false,
+    "python.defaultInterpreterPath": "python3",
+    "terminal.integrated.fontFamily": "monospace",
+    "git.enableSmartCommit": true,
+    "github.copilot.enable": {
+        "*": false,
+        "yaml": false,
+        "plaintext": true,
+        "markdown": false,
+        "scminput": false,
+        "python": false
+    },
+    "autoit.checkPath": "/Users/matanmishali/Downloads/autoit/Au3Check.exe",
+    "autoit.aiPath": "/Users/matanmishali/Downloads/autoit/AutoIt3.exe",
+    "[autoit]": {
+    
+    },
+	"terminal.integrated.inheritEnv": false,
+	"git.autofetch": true,
+	"[python]": {
+		"editor.formatOnType": true
+	},
+    "git.confirmSync": false,
+    "editor.largeFileOptimizations": false,
+    "remote.defaultExtensionsIfInstalledLocally": [
+        "GitHub.copilot",
+        "GitHub.copilot-chat",
+        "GitHub.vscode-pull-request-github"
+    ],
+    "claudeCode.preferredLocation": "panel"
+}

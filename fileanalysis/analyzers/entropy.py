@@ -1,10 +1,8 @@
 """Shannon entropy analysis for detecting packed/encrypted content."""
 
 from __future__ import annotations
-
 import math
 from collections import Counter
-
 from fileanalysis.analyzers.base import (
     AnalysisResult,
     BaseAnalyzer,

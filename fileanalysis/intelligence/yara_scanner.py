@@ -1,12 +1,8 @@
 """YARA signature matching engine."""
 
 from __future__ import annotations
-
-import os
 from pathlib import Path
-
 import yara
-
 from fileanalysis.analyzers.base import AnalysisResult, YaraMatch
 
 
