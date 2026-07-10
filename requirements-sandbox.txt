@@ -1,0 +1,11 @@
+rich
+click
+pefile
+yara-python
+puremagic
+lief
+requests
+ppdeep
+numpy
+--extra-index-url https://download.pytorch.org/whl/cpu
+torch

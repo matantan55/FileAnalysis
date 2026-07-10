@@ -1,0 +1,20 @@
+FROM python:3.11-slim
+
+# Install system dependencies needed for git, downloading, and building some python extensions
+RUN apt-get update && apt-get install -y \
+    git \
+    wget \
+    unzip \
+    build-essential \
+    libmagic1 \
+    && rm -rf /var/lib/apt/lists/*
+
+# The codebase will be mounted here
+WORKDIR /workspace
+
+# A safe, isolated directory for downloading malware, completely separated from the host mount
+RUN mkdir -p /app/dataset
+
+# Default command: install dependencies, then run the sandboxed training script
+# We use PYTHONPATH instead of `pip install -e .` to avoid setuptools version issues
+CMD pip install -r requirements-sandbox.txt && PYTHONPATH=/workspace python -m fileanalysis.scoring.sandbox_train
