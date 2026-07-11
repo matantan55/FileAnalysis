@@ -1,10 +1,12 @@
 FROM python:3.11-slim
 
-# Install system dependencies needed for git, downloading, and building some python extensions
+# Install system dependencies needed for git, downloading, extracting, and building some python extensions
 RUN apt-get update && apt-get install -y \
     git \
     wget \
+    curl \
     unzip \
+    p7zip-full \
     build-essential \
     libmagic1 \
     && rm -rf /var/lib/apt/lists/*

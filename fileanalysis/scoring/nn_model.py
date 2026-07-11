@@ -19,6 +19,7 @@ logger = logging.getLogger(__name__)
 
 # Default model weights path (alongside this file)
 DEFAULT_MODEL_PATH = Path(__file__).parent / "threat_model.pt"
+DEFAULT_SCALER_PATH = Path(__file__).parent / "feature_scaler.npz"
 
 
 class ThreatNet(nn.Module):
@@ -31,12 +32,18 @@ class ThreatNet(nn.Module):
     def __init__(self) -> None:
         super().__init__()
         self.network = nn.Sequential(
-            nn.Linear(NUM_FEATURES, 64),
+            nn.Linear(NUM_FEATURES, 128),
+            nn.BatchNorm1d(128),
+            nn.ReLU(),
+            nn.Dropout(0.3),
+            nn.Linear(128, 64),
+            nn.BatchNorm1d(64),
             nn.ReLU(),
             nn.Dropout(0.3),
             nn.Linear(64, 32),
+            nn.BatchNorm1d(32),
             nn.ReLU(),
-            nn.Dropout(0.3),
+            nn.Dropout(0.2),
             nn.Linear(32, 16),
             nn.ReLU(),
             nn.Linear(16, 1),
@@ -57,8 +64,20 @@ class NNThreatScorer:
     def __init__(self, model_path: str | Path | None = None) -> None:
         self.torch = torch
         self.model_path = Path(model_path) if model_path else DEFAULT_MODEL_PATH
+        self.scaler_path = self.model_path.parent / "feature_scaler.npz"
         self.extractor = FeatureExtractor()
+        self.feat_mean, self.feat_std = self._load_scaler()
         self.model = self._load_model()
+
+    def _load_scaler(self):
+        """Load saved feature normalization parameters."""
+        if self.scaler_path.exists():
+            data = np.load(self.scaler_path)
+            logger.info("Loaded feature scaler from %s", self.scaler_path)
+            return data["mean"], data["std"]
+        else:
+            logger.warning("No feature scaler found at %s, using raw features", self.scaler_path)
+            return np.zeros(NUM_FEATURES, dtype=np.float32), np.ones(NUM_FEATURES, dtype=np.float32)
 
     def _load_model(self):
         """Load the ThreatNet model with pre-trained weights."""
@@ -86,8 +105,9 @@ class NNThreatScorer:
         This writes to the nn_* fields on AnalysisResult so it can coexist
         with the heuristic scorer's risk_score/risk_level fields.
         """
-        # Extract features
+        # Extract and normalize features
         features = self.extractor.extract(result)
+        features = (features - self.feat_mean) / (self.feat_std + 1e-8)
         tensor = self.torch.tensor(features, dtype=self.torch.float32).unsqueeze(0)
 
         # Inference (no gradient tracking needed)
@@ -113,4 +133,3 @@ class NNThreatScorer:
             result.nn_risk_level = RiskLevel.HIGH
         else:
             result.nn_risk_level = RiskLevel.CRITICAL
-
