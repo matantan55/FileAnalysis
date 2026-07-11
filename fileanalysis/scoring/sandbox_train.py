@@ -14,6 +14,7 @@ import os
 import subprocess
 import sys
 import concurrent.futures
+import multiprocessing
 from pathlib import Path
 
 import numpy as np
@@ -227,7 +228,7 @@ def fetch_bazaar():
 # ──────────────────────────────────────────────────────────────
 # Feature extraction
 # ──────────────────────────────────────────────────────────────
-def _process_file(fpath, label, progress, task):
+def _process_worker(fpath, label, q):
     extractor = FeatureExtractor()
     analyzers = [
         HashAnalyzer(),
@@ -253,11 +254,30 @@ def _process_file(fpath, label, progress, task):
         capability_mapper.map_capabilities(result)
 
         feat_vec = extractor.extract(result)
-        return feat_vec, [label]
+        q.put((feat_vec, [label]))
     except Exception:
-        return None, None
-    finally:
-        progress.update(task, advance=1)
+        pass
+
+
+def _process_file(fpath, label, progress, task):
+    q = multiprocessing.Queue()
+    p = multiprocessing.Process(target=_process_worker, args=(fpath, label, q))
+    p.start()
+    p.join(5.0)
+
+    feat, lbl = None, None
+    if p.is_alive():
+        p.terminate()
+        p.join()
+    else:
+        if not q.empty():
+            try:
+                feat, lbl = q.get_nowait()
+            except Exception:
+                pass
+
+    progress.update(task, advance=1)
+    return feat, lbl
 
 
 def extract_features(file_paths, label, progress, task):
