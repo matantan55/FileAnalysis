@@ -35,7 +35,7 @@ class YaraScanner:
 
         try:
             return yara.compile(filepaths=rule_files)
-        except Exception as e:
+        except Exception:
             # Return None or partially compiled rules if some fail
             # We can log/add errors to results at scan time
             return None

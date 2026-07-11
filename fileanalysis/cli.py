@@ -4,7 +4,6 @@ from __future__ import annotations
 
 import socket
 import sys
-from pathlib import Path
 
 import click
 from rich.console import Console
@@ -20,7 +19,6 @@ from fileanalysis.analyzers.pe_analyzer import PEAnalyzer
 from fileanalysis.analyzers.script_analyzer import ScriptAnalyzer
 from fileanalysis.analyzers.strings import StringAnalyzer
 from fileanalysis.intelligence.capability_mapper import CapabilityMapper
-from fileanalysis.intelligence.virustotal import VirusTotalClient
 from fileanalysis.intelligence.yara_scanner import YaraScanner
 from fileanalysis.loader import load_file
 from fileanalysis.reporting.json_report import JsonReporter
@@ -40,11 +38,9 @@ def _has_internet() -> bool:
 
 @click.command()
 @click.argument("file_path", type=click.Path(exists=True, dir_okay=False))
-@click.option("--vt-api-key", envvar="VT_API_KEY", help="VirusTotal API Key (also checks VT_API_KEY env var).")
-@click.option("--no-vt", is_flag=True, help="Disable VirusTotal lookup even if an API key is available.")
 @click.option("--json", "json_format", is_flag=True, help="Output results in JSON format.")
 @click.option("--yara-rules", type=click.Path(file_okay=False), help="Custom directory containing YARA rules (.yar/.yara).")
-def cli(file_path: str, vt_api_key: str | None, no_vt: bool, json_format: bool, yara_rules: str | None) -> None:
+def cli(file_path: str, json_format: bool, yara_rules: str | None) -> None:
     """Analyze a file for malicious indicators, capabilities, and threat environment impact."""
     console = Console(stderr=True)
     show_progress = not json_format  # suppress spinner for JSON output
@@ -58,8 +54,8 @@ def cli(file_path: str, vt_api_key: str | None, no_vt: bool, json_format: bool, 
         transient=True,
         disable=not show_progress,
     ) as progress:
-        # Total steps: load(1) + common(3) + format(1) + yara(1) + mitre(1) + vt(1) + heuristic(1) + nn(1) = 10
-        task = progress.add_task("Scanning…", total=10)
+        # Total steps: load(1) + common(3) + format(1) + yara(1) + mitre(1) + heuristic(1) + nn(1) = 9
+        task = progress.add_task("Scanning…", total=9)
 
         # 1. Load file
         progress.update(task, description="📂 Loading file…")
@@ -114,24 +110,13 @@ def cli(file_path: str, vt_api_key: str | None, no_vt: bool, json_format: bool, 
         mapper.map_capabilities(result)
         progress.advance(task)
 
-        # 6. VirusTotal lookup (default ON if API key exists + internet available)
-        progress.update(task, description="🌐 VirusTotal lookup…")
-        if not no_vt:
-            vt_client = VirusTotalClient(api_key=vt_api_key)
-            if vt_client.enabled:
-                if _has_internet():
-                    vt_client.lookup_hash(result.hashes.sha256, result)
-                else:
-                    result.errors.append("VirusTotal skipped: no internet connection detected.")
-        progress.advance(task)
-
-        # 7. Heuristic scoring
+        # 6. Heuristic scoring
         progress.update(task, description="📊 Heuristic scoring…")
         heuristic_scorer = ThreatScorer()
         heuristic_scorer.calculate_score(result)
         progress.advance(task)
 
-        # 8. Neural network scoring
+        # 7. Neural network scoring
         progress.update(task, description="🧠 Neural network scoring…")
         try:
             nn_scorer = NNThreatScorer()

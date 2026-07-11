@@ -25,7 +25,7 @@ DEFAULT_SCALER_PATH = Path(__file__).parent / "feature_scaler.npz"
 class ThreatNet(nn.Module):
     """Multi-layer perceptron for malware threat scoring.
 
-    Input:  31-dimensional feature vector from FeatureExtractor
+    Input:  30-dimensional feature vector from FeatureExtractor
     Output: Single scalar in [0, 1] representing threat probability
     """
 

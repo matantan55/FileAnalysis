@@ -67,6 +67,14 @@ CAPABILITY_RULES = [
         "apis": ["CryptEncrypt", "CryptGenKey"],
         "indicators": ["Cryptocurrency Wallet Addresses"],
     },
+    {
+        "name": "Exploitation",
+        "category": ThreatCategory.EXPLOIT,
+        "technique_id": "T1068",
+        "description": "Exploits known software vulnerabilities for initial access or privilege escalation.",
+        "apis": [],
+        "indicators": ["Vulnerability/CVE References Detected"],
+    },
 ]
 
 
@@ -137,6 +145,9 @@ class CapabilityMapper:
 
         if "Wiper / Ransomware Impact" in caps:
             impacts.append("It is capable of performing bulk file encryption (ransomware behavior) or data destruction.")
+
+        if "Exploitation" in caps:
+            impacts.append("It targets specific software vulnerabilities (CVEs) to exploit the system for access or privileges.")
 
         if not impacts:
             if result.indicators:

@@ -9,7 +9,6 @@ All malware lives ONLY inside the container at /app/dataset.
 Only the trained model weights are saved to the host via /workspace mount.
 """
 
-import json
 import os
 import subprocess
 import sys
@@ -50,16 +49,20 @@ from fileanalysis.scoring.nn_model import ThreatNet
 # ──────────────────────────────────────────────────────────────
 DIKE_REPO = "https://github.com/iosifache/DikeDataset.git"
 ZOO_REPO = "https://github.com/ytisf/theZoo.git"
-BAZAAR_API = "https://mb-api.abuse.ch/api/v1/"
+INQUEST_REPO = "https://github.com/InQuest/malware-samples.git"
+FABRI_REPO = "https://github.com/fabrimagic72/malware-samples.git"
+JSTROSCH_REPO = "https://github.com/jstrosch/malware-samples.git"
 
 DATASET_ROOT = Path("/app/dataset")
 DIKE_DIR = DATASET_ROOT / "DikeDataset"
 ZOO_DIR = DATASET_ROOT / "theZoo"
-BAZAAR_DIR = DATASET_ROOT / "bazaar"
+INQUEST_DIR = DATASET_ROOT / "inquest"
+FABRI_DIR = DATASET_ROOT / "fabri"
+JSTROSCH_DIR = DATASET_ROOT / "jstrosch"
 
 MAX_DIKE_PER_CLASS = 1000
 MAX_ZOO_FILES = 500
-MAX_BAZAAR_FILES = 500
+MAX_GITHUB_FILES = 500
 
 WORKSPACE_MODEL_PATH = Path("/workspace/fileanalysis/scoring/threat_model.pt")
 WORKSPACE_SCALER_PATH = Path("/workspace/fileanalysis/scoring/feature_scaler.npz")
@@ -141,88 +144,62 @@ def clone_zoo():
     return extract_dir
 
 
-def fetch_bazaar():
-    """Download recent PE malware samples from MalwareBazaar API."""
-    BAZAAR_DIR.mkdir(parents=True, exist_ok=True)
+def fetch_github_datasets():
+    """Clone new GitHub malware datasets."""
+    datasets = [
+        ("InQuest", INQUEST_REPO, INQUEST_DIR),
+        ("fabrimagic72", FABRI_REPO, FABRI_DIR),
+        ("jstrosch (PMAT)", JSTROSCH_REPO, JSTROSCH_DIR),
+    ]
 
-    existing = list(BAZAAR_DIR.glob("*"))
-    if len(existing) >= 50:
-        console.print(f"[green]✓ MalwareBazaar samples already present ({len(existing)} files).[/]")
-        return
-
-    console.print("[bold cyan]📦 Downloading from MalwareBazaar…[/]")
-
-    import requests
-
-    # Query recent PE/EXE samples
-    tags_to_try = ["exe", "dll", "Trojan", "Ransomware", "Backdoor"]
-    sha256_list = []
-
-    for tag in tags_to_try:
-        if len(sha256_list) >= MAX_BAZAAR_FILES:
-            break
-        try:
-            resp = requests.post(
-                BAZAAR_API,
-                data={"query": "get_taginfo", "tag": tag, "limit": 100},
-                timeout=30,
+    for name, repo_url, target_dir in datasets:
+        if not target_dir.exists():
+            console.print(f"[bold cyan]📦 Cloning {name}…[/]")
+            target_dir.parent.mkdir(parents=True, exist_ok=True)
+            subprocess.run(
+                ["git", "clone", "--depth", "1", repo_url, str(target_dir)],
+                check=True,
             )
-            if resp.status_code == 200:
-                data = resp.json()
-                if data.get("query_status") == "ok" and data.get("data"):
-                    for item in data["data"]:
-                        if len(sha256_list) >= MAX_BAZAAR_FILES:
-                            break
-                        sha = item.get("sha256_hash")
-                        if sha and sha not in sha256_list:
-                            sha256_list.append(sha)
-        except Exception:
-            pass
+        else:
+            console.print(f"[green]✓ {name} already present.[/]")
 
-    console.print(f"[bold]Downloading {len(sha256_list)} samples from MalwareBazaar…[/]")
-
-    downloaded = 0
-    with Progress(
-        SpinnerColumn(),
-        TextColumn("[bold cyan]Downloading MalwareBazaar"),
-        BarColumn(),
-        TextColumn("[progress.percentage]{task.percentage:>3.0f}%"),
-        TimeRemainingColumn(),
-    ) as progress:
-        task_bz = progress.add_task("Downloading...", total=len(sha256_list))
-        for sha in sha256_list:
-            outfile = BAZAAR_DIR / sha
-            if outfile.exists():
-                downloaded += 1
-                progress.update(task_bz, advance=1)
-                continue
-            try:
-                resp = requests.post(
-                    BAZAAR_API,
-                    data={"query": "get_file", "sha256_hash": sha},
-                    timeout=60,
-                )
-                if resp.status_code == 200 and len(resp.content) > 100:
-                    # MalwareBazaar returns zipped files — try to extract
-                    zip_path = BAZAAR_DIR / f"{sha}.zip"
-                    zip_path.write_bytes(resp.content)
-                    try:
-                        subprocess.run(
-                            ["7z", "x", "-pinfected", "-y", f"-o{BAZAAR_DIR}", str(zip_path)],
-                            check=True,
-                            capture_output=True,
-                            timeout=15,
-                        )
-                        zip_path.unlink(missing_ok=True)
-                        downloaded += 1
-                    except (subprocess.CalledProcessError, subprocess.TimeoutExpired):
-                        zip_path.unlink(missing_ok=True)
-            except Exception:
-                pass
-            finally:
-                progress.update(task_bz, advance=1)
-
-    console.print(f"[green]✓ Downloaded {downloaded} MalwareBazaar samples.[/]")
+    # Extract password-protected zips (password = "infected") if any exist
+    extract_dir = DATASET_ROOT / "github_extracted"
+    extract_dir.mkdir(parents=True, exist_ok=True)
+    
+    # We'll just collect the files in collect_files later, but if there are zips:
+    zips = []
+    for d in [INQUEST_DIR, FABRI_DIR, JSTROSCH_DIR]:
+        zips.extend(list(d.rglob("*.zip")))
+        zips.extend(list(d.rglob("*.7z")))
+    
+    if zips:
+        extracted = 0
+        with Progress(
+            SpinnerColumn(),
+            TextColumn("[bold yellow]Extracting GitHub zips"),
+            BarColumn(),
+            TextColumn("[progress.percentage]{task.percentage:>3.0f}%"),
+            TimeRemainingColumn(),
+        ) as progress:
+            task_gh = progress.add_task("Extracting...", total=len(zips))
+            for zf in zips:
+                out_dir = extract_dir / zf.stem
+                out_dir.mkdir(exist_ok=True)
+                try:
+                    subprocess.run(
+                        ["7z", "x", "-pinfected", "-y", f"-o{out_dir}", str(zf)],
+                        check=True,
+                        capture_output=True,
+                        timeout=15,
+                    )
+                    extracted += 1
+                except (subprocess.CalledProcessError, subprocess.TimeoutExpired):
+                    pass
+                finally:
+                    progress.update(task_gh, advance=1)
+        if extracted > 0:
+            console.print(f"[green]✓ Extracted {extracted} GitHub archives.[/]")
 
 
 # ──────────────────────────────────────────────────────────────
@@ -321,7 +298,7 @@ def main():
     # 1. Fetch all datasets
     clone_dike()
     clone_zoo()
-    fetch_bazaar()
+    fetch_github_datasets()
 
     # 2. Collect file paths
     console.rule("[bold]Collecting files")
@@ -332,14 +309,19 @@ def main():
     # Malware files from all sources
     dike_malware = list((DIKE_DIR / "files" / "malware").glob("*"))[:MAX_DIKE_PER_CLASS]
     zoo_malware = collect_files(DATASET_ROOT / "zoo_extracted", MAX_ZOO_FILES)
-    bazaar_malware = collect_files(BAZAAR_DIR, MAX_BAZAAR_FILES)
+    github_malware = collect_files(DATASET_ROOT / "github_extracted", MAX_GITHUB_FILES)
+    github_malware += collect_files(INQUEST_DIR, MAX_GITHUB_FILES)
+    github_malware += collect_files(FABRI_DIR, MAX_GITHUB_FILES)
+    github_malware += collect_files(JSTROSCH_DIR, MAX_GITHUB_FILES)
+    # Dedup and trim
+    github_malware = list(set(github_malware))[:MAX_GITHUB_FILES * 3]
 
-    all_malware = dike_malware + zoo_malware + bazaar_malware
+    all_malware = dike_malware + zoo_malware + github_malware
 
     console.print(f"  Benign:  [green]{len(dike_benign)}[/] (DikeDataset)")
     console.print(f"  Malware: [red]{len(dike_malware)}[/] (DikeDataset) + "
                   f"[red]{len(zoo_malware)}[/] (theZoo) + "
-                  f"[red]{len(bazaar_malware)}[/] (MalwareBazaar) = "
+                  f"[red]{len(github_malware)}[/] (GitHub repos) = "
                   f"[bold red]{len(all_malware)}[/] total")
 
     # 3. Extract features
@@ -355,14 +337,14 @@ def main():
         TimeRemainingColumn(),
     ) as progress:
         task_b = progress.add_task("[green]Benign files…", total=len(dike_benign))
-        f, l = extract_features(dike_benign, 0.0, progress, task_b)
+        f, lbls = extract_features(dike_benign, 0.0, progress, task_b)
         X.extend(f)
-        y.extend(l)
+        y.extend(lbls)
 
         task_m = progress.add_task("[red]Malware files…", total=len(all_malware))
-        f, l = extract_features(all_malware, 1.0, progress, task_m)
+        f, lbls = extract_features(all_malware, 1.0, progress, task_m)
         X.extend(f)
-        y.extend(l)
+        y.extend(lbls)
 
     if len(X) < 10:
         console.print("[bold red]Too few feature vectors extracted. Exiting.[/]")

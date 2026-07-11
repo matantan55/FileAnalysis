@@ -30,6 +30,7 @@ class ThreatCategory(Enum):
     IMPACT = "Impact"
     EXECUTION = "Execution"
     INITIAL_ACCESS = "Initial Access"
+    EXPLOIT = "Exploitation"
 
 
 @dataclass
@@ -73,6 +74,7 @@ class StringCategory:
     base64_blobs: list[str] = field(default_factory=list)
     shell_commands: list[str] = field(default_factory=list)
     suspicious: list[str] = field(default_factory=list)
+    cve_references: list[str] = field(default_factory=list)
 
 
 @dataclass
@@ -95,16 +97,6 @@ class YaraMatch:
     tags: list[str] = field(default_factory=list)
     severity: str = "medium"
     matched_strings: list[str] = field(default_factory=list)
-
-
-@dataclass
-class VirusTotalResult:
-    """VirusTotal lookup results."""
-    detected: bool = False
-    detection_ratio: str = ""
-    detections: dict[str, str] = field(default_factory=dict)
-    malware_family: str = ""
-    permalink: str = ""
 
 
 @dataclass
@@ -144,7 +136,6 @@ class AnalysisResult:
     indicators: list[Indicator] = field(default_factory=list)
     capabilities: list[Capability] = field(default_factory=list)
     yara_matches: list[YaraMatch] = field(default_factory=list)
-    virustotal: VirusTotalResult | None = None
     risk_score: float = 0.0
     risk_level: RiskLevel = RiskLevel.CLEAN
     format_info: dict[str, Any] = field(default_factory=dict)

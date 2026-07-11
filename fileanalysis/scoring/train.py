@@ -12,7 +12,6 @@ and better generalization to edge cases.
 from __future__ import annotations
 
 import argparse
-import sys
 from pathlib import Path
 
 import numpy as np
@@ -217,7 +216,7 @@ def train(
     torch.manual_seed(seed)
     save_path = Path(output_path) if output_path else Path(__file__).parent / "threat_model.pt"
 
-    print(f"🧠 ThreatNet Training Pipeline")
+    print("🧠 ThreatNet Training Pipeline")
     print(f"   Samples: {n_samples:,}")
     print(f"   Epochs:  {epochs}")
     print(f"   Batch:   {batch_size}")
@@ -319,7 +318,7 @@ def train(
             1.0, 0.0, 0.0, 0.0, 0.0,                  # file type
         ]], dtype=torch.float32)
         high_score = model(high_input).item() * 100
-        print(f"\n🧪 Sanity check:")
+        print("\n🧪 Sanity check:")
         print(f"   Empty file features → Score: {zero_score:.1f}/100")
         print(f"   High-threat features → Score: {high_score:.1f}/100")
 

@@ -8,7 +8,7 @@ if TYPE_CHECKING:
     from fileanalysis.analyzers.base import AnalysisResult
 
 # Total number of features extracted
-NUM_FEATURES = 31
+NUM_FEATURES = 30
 
 
 def _safe_log(x: float) -> float:
@@ -24,7 +24,7 @@ def _cap(value: float, maximum: float = 50.0) -> float:
 class FeatureExtractor:
     """Extracts a fixed-length numeric feature vector from an AnalysisResult.
 
-    The resulting vector has ``NUM_FEATURES`` (31) dimensions, designed to
+    The resulting vector has ``NUM_FEATURES`` (30) dimensions, designed to
     capture the most discriminative signals from every analyzer stage.
     """
 
@@ -94,19 +94,13 @@ class FeatureExtractor:
         yara_score = sum(severity_map.get(m.severity.lower(), 1.0) for m in yara)
         features.append(min(yara_score, 20.0))                     # [24]
 
-        # --- 8. VirusTotal (1 feature) ---
-        vt_detected = 0.0
-        if result.virustotal and result.virustotal.detected:
-            vt_detected = 1.0
-        features.append(vt_detected)                               # [25]
-
-        # --- 9. File type one-hot (5 features) ---
+        # --- 8. File type one-hot (5 features) ---
         ft = result.metadata.file_type
-        features.append(1.0 if ft == "pe" else 0.0)               # [26]
-        features.append(1.0 if ft == "elf" else 0.0)              # [27]
-        features.append(1.0 if ft == "script" else 0.0)           # [28]
-        features.append(1.0 if ft == "document" else 0.0)         # [29]
-        features.append(1.0 if ft == "macho" else 0.0)            # [30]
+        features.append(1.0 if ft == "pe" else 0.0)               # [25]
+        features.append(1.0 if ft == "elf" else 0.0)              # [26]
+        features.append(1.0 if ft == "script" else 0.0)           # [27]
+        features.append(1.0 if ft == "document" else 0.0)         # [28]
+        features.append(1.0 if ft == "macho" else 0.0)            # [29]
 
         assert len(features) == NUM_FEATURES, f"Expected {NUM_FEATURES} features, got {len(features)}"
         return np.array(features, dtype=np.float32)

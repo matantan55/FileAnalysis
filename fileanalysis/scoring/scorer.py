@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from fileanalysis.analyzers.base import AnalysisResult, RiskLevel, RiskLevel as RL
+from fileanalysis.analyzers.base import AnalysisResult, RiskLevel
 
 
 class ThreatScorer:
@@ -47,12 +47,6 @@ class ThreatScorer:
             else:
                 yara_points += 5.0
         score += min(yara_points, 30.0)
-
-        # 5. VirusTotal consensus adjustment (if present)
-        if result.virustotal and result.virustotal.detected:
-            # Shift score up significantly if engines confirm malware
-            score = max(score, 75.0)
-            score += 10.0
 
         # Bound score 0-100
         final_score = min(max(round(score, 1), 0.0), 100.0)

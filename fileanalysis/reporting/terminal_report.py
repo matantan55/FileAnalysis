@@ -97,16 +97,6 @@ class TerminalReporter:
             self.console.print(yara_table)
             self.console.print()
 
-        # VirusTotal
-        if result.virustotal:
-            vt = result.virustotal
-            self.console.print("[bold underline cyan]🌐 VirusTotal Consensus[/]")
-            self.console.print(f"  [bold]Detection Ratio:[/] {vt.detection_ratio}")
-            if vt.malware_family:
-                self.console.print(f"  [bold]Malware Family:[/] [bold red]{vt.malware_family}[/]")
-            if vt.permalink:
-                self.console.print(f"  [bold]Link:[/] [underline cyan]{vt.permalink}[/]")
-            self.console.print()
 
         # Errors list
         if result.errors:

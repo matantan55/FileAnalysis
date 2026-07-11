@@ -60,6 +60,11 @@ IMPORT_THREAT_MAP: dict[str, tuple[ThreatCategory, str]] = {
     "RegSetValueExA": (ThreatCategory.PERSISTENCE, "Registry modification for persistence"),
     "RegSetValueExW": (ThreatCategory.PERSISTENCE, "Registry modification for persistence"),
     "RegCreateKeyExA": (ThreatCategory.PERSISTENCE, "Registry key creation for persistence"),
+    "RegDeleteKeyA": (ThreatCategory.DEFENSE_EVASION, "Registry key deletion to hide tracks or break security"),
+    "RegDeleteKeyW": (ThreatCategory.DEFENSE_EVASION, "Registry key deletion to hide tracks or break security"),
+    "RegDeleteValueA": (ThreatCategory.DEFENSE_EVASION, "Registry value deletion to hide tracks"),
+    "RegDeleteValueW": (ThreatCategory.DEFENSE_EVASION, "Registry value deletion to hide tracks"),
+    "RegOpenKeyExA": (ThreatCategory.DISCOVERY, "Registry key reading/discovery"),
     "CreateServiceA": (ThreatCategory.PERSISTENCE, "Service creation for persistence"),
     "CreateServiceW": (ThreatCategory.PERSISTENCE, "Service creation for persistence"),
     # Credential access
@@ -430,7 +435,7 @@ class PEAnalyzer(BaseAnalyzer):
         if not hasattr(pe, "DIRECTORY_ENTRY_RESOURCE"):
             return
 
-        resource_types = []
+
         embedded_pe = False
 
         def _walk_resources(entries, depth=0):

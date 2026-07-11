@@ -54,7 +54,7 @@ class ScriptAnalyzer(BaseAnalyzer):
             result.errors.append("Failed to decode script content as UTF-8 text")
             return
 
-        detected_indicators = []
+
 
         # Run regex checks against the script content
         for category_name, patterns in DANGEROUS_PATTERNS.items():

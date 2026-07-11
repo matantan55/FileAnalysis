@@ -46,6 +46,10 @@ PATTERNS = {
     "base64_blobs": re.compile(
         r'(?:[A-Za-z0-9+/]{40,}={0,2})'
     ),
+    "cve_references": re.compile(
+        r'CVE-\d{4}-\d{4,7}',
+        re.IGNORECASE
+    ),
 }
 
 # Suspicious shell commands and indicators
@@ -63,7 +67,7 @@ SUSPICIOUS_COMMANDS = [
     "base64 --decode", "base64 -d",
     "certutil -decode", "certutil -urlcache",
     "bitsadmin",
-    "reg add", "reg delete",
+    "reg add", "reg delete", "reg query", "reg import", "reg export",
     "schtasks", "at ",
     "net user", "net localgroup",
     "wmic ", "wscript", "cscript",
@@ -85,7 +89,7 @@ SUSPICIOUS_APIS = [
     "VirtualProtect", "VirtualAlloc",
     "LoadLibrary", "GetProcAddress",
     "CreateFile", "WriteFile", "DeleteFile",
-    "RegSetValue", "RegCreateKey",
+    "RegSetValue", "RegCreateKey", "RegDeleteKey", "RegDeleteValue", "RegOpenKey",
     "InternetOpen", "HttpSendRequest", "URLDownloadToFile",
     "WSAStartup", "connect", "send", "recv",
     "socket", "bind", "listen", "accept",
@@ -189,6 +193,10 @@ class StringAnalyzer(BaseAnalyzer):
             except Exception:
                 continue
         cat.base64_blobs = valid_b64[:MAX_STRINGS_PER_CATEGORY]
+
+        cat.cve_references = list(set(
+            PATTERNS["cve_references"].findall(full_text)
+        ))[:MAX_STRINGS_PER_CATEGORY]
 
         return cat
 
@@ -300,4 +308,13 @@ class StringAnalyzer(BaseAnalyzer):
                 ),
                 evidence=s.base64_blobs[:3],
                 severity=0.4,
+            ))
+
+        if s.cve_references:
+            result.indicators.append(Indicator(
+                category=ThreatCategory.EXPLOIT,
+                name="Vulnerability/CVE References Detected",
+                description=f"Found {len(s.cve_references)} reference(s) to known vulnerabilities (CVEs), highly indicative of an exploit payload.",
+                evidence=s.cve_references[:5],
+                severity=0.9,
             ))

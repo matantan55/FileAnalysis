@@ -67,8 +67,7 @@ python -m fileanalysis.cli /usr/bin/zip
 | Flag | Description |
 |------|-------------|
 | `--json` | Output results as JSON |
-| `--vt` | Enable VirusTotal hash lookup |
-| `--vt-api-key KEY` | VirusTotal API key (or set `VT_API_KEY` env var) |
+
 | `--yara-rules DIR` | Path to custom YARA rules directory |
 
 **Examples:**
@@ -76,14 +75,13 @@ python -m fileanalysis.cli /usr/bin/zip
 # JSON output (for scripting)
 python -m fileanalysis.cli suspicious.exe --json
 
-# With VirusTotal lookup
-python -m fileanalysis.cli suspicious.exe --vt --vt-api-key YOUR_KEY
+
 
 # Custom YARA rules
 python -m fileanalysis.cli suspicious.exe --yara-rules /path/to/rules/
 
 # Combine flags
-python -m fileanalysis.cli suspicious.exe --vt --json
+python -m fileanalysis.cli suspicious.exe --json
 ```
 
 ---
@@ -93,8 +91,8 @@ python -m fileanalysis.cli suspicious.exe --vt --json
 FileAnalysis runs a multi-stage pipeline on every file:
 
 1. **Load** — Reads the file, detects type (PE, ELF, Mach-O, script, document)
-2. **Analyze** — Runs format-specific analyzers (hashing, entropy, strings, imports, sections)
-3. **Intelligence** — YARA signature matching + MITRE ATT&CK capability mapping
+2. **Analyze** — Runs format-specific analyzers (hashing, entropy, advanced strings including CVE/Registry patterns, imports, sections)
+3. **Intelligence** — YARA signature matching + MITRE ATT&CK capability mapping (e.g., Exploitation, Persistence)
 4. **Score** — Dual scoring with both heuristic rules and a neural network
 5. **Report** — Rich terminal output or JSON
 
@@ -105,7 +103,7 @@ Every scan produces **two independent threat scores**:
 | Scorer | How it works |
 |--------|-------------|
 | **📊 Heuristic** | Hand-tuned weighted formula (entropy + strings + capabilities + YARA) |
-| **🧠 Neural Net** | 4-layer MLP trained on 400 real malware/benign samples from DikeDataset |
+| **🧠 Neural Net** | 4-layer MLP trained on ~4,000 real malware/benign samples from multiple datasets (DikeDataset, theZoo, InQuest, PMAT, fabrimagic72) |
 
 ### Risk Levels
 
@@ -132,9 +130,9 @@ docker run --rm -v "$(pwd)":/workspace fileanalysis-sandbox
 ```
 
 This will:
-1. Clone the [DikeDataset](https://github.com/iosifache/DikeDataset) inside the container
-2. Extract 31-dimensional feature vectors from 400 real files
-3. Train ThreatNet for 50 epochs
+1. Clone multiple curated cybersecurity datasets (DikeDataset, theZoo, InQuest, PMAT, fabrimagic72) inside the container
+2. Extract 30-dimensional feature vectors from nearly 4,000 real files
+3. Train ThreatNet for 200 epochs
 4. Save `threat_model.pt` to your local project
 5. Destroy the container (and all malware) when done
 
@@ -160,12 +158,11 @@ FileAnalysis/
 │   │   └── dll_analyzer.py       # DLL-specific analysis
 │   ├── intelligence/
 │   │   ├── yara_scanner.py       # YARA rule matching
-│   │   ├── capability_mapper.py  # MITRE ATT&CK mapping
-│   │   └── virustotal.py         # VirusTotal API integration
+│   │   └── capability_mapper.py  # MITRE ATT&CK mapping
 │   ├── scoring/
 │   │   ├── scorer.py             # Heuristic threat scorer
 │   │   ├── nn_model.py           # ThreatNet neural network
-│   │   ├── features.py           # 31-dim feature extraction
+│   │   ├── features.py           # 30-dim feature extraction
 │   │   ├── train.py              # Synthetic data training
 │   │   ├── sandbox_train.py      # Real malware training (Docker)
 │   │   └── threat_model.pt       # Trained model weights
@@ -189,7 +186,6 @@ FileAnalysis/
 | `yara-python` | YARA rule matching |
 | `puremagic` | MIME type detection |
 | `lief` | Cross-platform binary parsing |
-| `requests` | HTTP client (VirusTotal) |
 | `ppdeep` | Fuzzy hashing (ssdeep) |
 | `numpy` | Feature vector computation |
 | `torch` *(optional)* | Neural network inference |
@@ -199,3 +195,14 @@ FileAnalysis/
 ## License
 
 See [LICENSE](LICENSE) for details.
+
+---
+
+## Roadmap & Future Work
+
+To further scale and automate the malware detection capabilities, the following initiatives are on our future roadmap:
+
+- **Continuous Model Retraining**: Establish an automated, continuous training pipeline that runs daily, ensuring the model stays up-to-date with zero-day behaviors. 
+- **Cloud-Based Data Collection**: Migrate the data collection and feature extraction processes to a centralized cloud environment.
+- **Cloud Storage for Datasets**: Persist all processed datasets and extracted feature vectors in cloud storage (e.g., AWS S3). This eliminates the need to recursively fetch old data on every training run, vastly speeding up the training pipeline.
+- **Automated Versioning & Releases**: Automatically tag and publish a new version of the ThreatNet model alongside each successful daily training run.
