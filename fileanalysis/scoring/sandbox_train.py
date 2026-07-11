@@ -16,6 +16,9 @@ import concurrent.futures
 import multiprocessing
 from pathlib import Path
 
+import boto3
+from botocore.exceptions import ClientError
+
 import numpy as np
 import torch
 import torch.nn as nn
@@ -59,6 +62,7 @@ ZOO_DIR = DATASET_ROOT / "theZoo"
 INQUEST_DIR = DATASET_ROOT / "inquest"
 FABRI_DIR = DATASET_ROOT / "fabri"
 JSTROSCH_DIR = DATASET_ROOT / "jstrosch"
+ULTIMATE_RAT_DIR = DATASET_ROOT / "ultimate_rat"
 
 MAX_DIKE_PER_CLASS = 1000
 MAX_ZOO_FILES = 500
@@ -129,7 +133,7 @@ def clone_zoo():
             out_dir.mkdir(exist_ok=True)
             try:
                 subprocess.run(
-                    ["7z", "x", "-pinfected", "-y", f"-o{out_dir}", str(zf)],
+                    ["7z", "x", "-r", "-pinfected", "-y", f"-o{out_dir}", str(zf)],
                     check=True,
                     capture_output=True,
                     timeout=30,
@@ -150,6 +154,7 @@ def fetch_github_datasets():
         ("InQuest", INQUEST_REPO, INQUEST_DIR),
         ("fabrimagic72", FABRI_REPO, FABRI_DIR),
         ("jstrosch (PMAT)", JSTROSCH_REPO, JSTROSCH_DIR),
+        ("Ultimate-RAT-Collection", "https://github.com/Cryakl/Ultimate-RAT-Collection.git", ULTIMATE_RAT_DIR),
     ]
 
     for name, repo_url, target_dir in datasets:
@@ -169,9 +174,10 @@ def fetch_github_datasets():
     
     # We'll just collect the files in collect_files later, but if there are zips:
     zips = []
-    for d in [INQUEST_DIR, FABRI_DIR, JSTROSCH_DIR]:
+    for d in [INQUEST_DIR, FABRI_DIR, JSTROSCH_DIR, ULTIMATE_RAT_DIR]:
         zips.extend(list(d.rglob("*.zip")))
         zips.extend(list(d.rglob("*.7z")))
+        zips.extend(list(d.rglob("*.rar")))
     
     if zips:
         extracted = 0
@@ -188,7 +194,7 @@ def fetch_github_datasets():
                 out_dir.mkdir(exist_ok=True)
                 try:
                     subprocess.run(
-                        ["7z", "x", "-pinfected", "-y", f"-o{out_dir}", str(zf)],
+                        ["7z", "x", "-r", "-pinfected", "-y", f"-o{out_dir}", str(zf)],
                         check=True,
                         capture_output=True,
                         timeout=15,
@@ -295,66 +301,105 @@ def collect_files(directory: Path, max_files: int = 10000) -> list[Path]:
 def main():
     console.rule("[bold cyan]⚡ ThreatNet Multi-Dataset Training[/]")
 
-    # 1. Fetch all datasets
-    clone_dike()
-    clone_zoo()
-    fetch_github_datasets()
-
-    # 2. Collect file paths
-    console.rule("[bold]Collecting files")
-
-    # Benign files (DikeDataset only)
-    dike_benign = list((DIKE_DIR / "files" / "benign").glob("*"))[:MAX_DIKE_PER_CLASS]
-
-    # Malware files from all sources
-    dike_malware = list((DIKE_DIR / "files" / "malware").glob("*"))[:MAX_DIKE_PER_CLASS]
-    zoo_malware = collect_files(DATASET_ROOT / "zoo_extracted", MAX_ZOO_FILES)
-    github_malware = collect_files(DATASET_ROOT / "github_extracted", MAX_GITHUB_FILES)
-    github_malware += collect_files(INQUEST_DIR, MAX_GITHUB_FILES)
-    github_malware += collect_files(FABRI_DIR, MAX_GITHUB_FILES)
-    github_malware += collect_files(JSTROSCH_DIR, MAX_GITHUB_FILES)
-    # Dedup and trim
-    github_malware = list(set(github_malware))[:MAX_GITHUB_FILES * 3]
-
-    all_malware = dike_malware + zoo_malware + github_malware
-
-    console.print(f"  Benign:  [green]{len(dike_benign)}[/] (DikeDataset)")
-    console.print(f"  Malware: [red]{len(dike_malware)}[/] (DikeDataset) + "
-                  f"[red]{len(zoo_malware)}[/] (theZoo) + "
-                  f"[red]{len(github_malware)}[/] (GitHub repos) = "
-                  f"[bold red]{len(all_malware)}[/] total")
-
-    # 3. Extract features
-    console.rule("[bold]Extracting features")
+    bucket_name = os.environ.get("AWS_S3_BUCKET")
+    cache_file = "dataset_cache.npz"
+    local_cache_path = DATASET_ROOT / cache_file
 
     X, y = [], []
+    used_cache = False
 
-    with Progress(
-        SpinnerColumn(),
-        TextColumn("[bold]{task.description}"),
-        BarColumn(),
-        TextColumn("[progress.percentage]{task.percentage:>3.0f}%"),
-        TimeRemainingColumn(),
-    ) as progress:
-        task_b = progress.add_task("[green]Benign files…", total=len(dike_benign))
-        f, lbls = extract_features(dike_benign, 0.0, progress, task_b)
-        X.extend(f)
-        y.extend(lbls)
+    if bucket_name:
+        console.print(f"[bold cyan]☁️ Checking S3 bucket ({bucket_name}) for cached dataset…[/]")
+        try:
+            s3 = boto3.client('s3')
+            s3.download_file(bucket_name, cache_file, str(local_cache_path))
+            console.print("[bold green]✓ Downloaded cached dataset from S3![/]")
+            
+            data = np.load(local_cache_path)
+            X = data['X']
+            y = data['y']
+            used_cache = True
+            console.print(f"[bold green]✓ Loaded {len(X)} feature vectors from cache. Skipping extraction![/]")
+        except ClientError as e:
+            if e.response['Error']['Code'] == "404":
+                console.print("[yellow]⚠ Cache not found in S3. Will extract from scratch.[/]")
+            else:
+                console.print(f"[bold red]Error accessing S3: {e}[/]")
+        except Exception as e:
+            console.print(f"[bold red]Failed to load cache: {e}[/]")
 
-        task_m = progress.add_task("[red]Malware files…", total=len(all_malware))
-        f, lbls = extract_features(all_malware, 1.0, progress, task_m)
-        X.extend(f)
-        y.extend(lbls)
+    if not used_cache:
+        # 1. Fetch all datasets
+        clone_dike()
+        clone_zoo()
+        fetch_github_datasets()
 
-    if len(X) < 10:
-        console.print("[bold red]Too few feature vectors extracted. Exiting.[/]")
-        sys.exit(1)
+        # 2. Collect file paths
+        console.rule("[bold]Collecting files")
 
-    X = np.array(X, dtype=np.float32)
-    y = np.array(y, dtype=np.float32)
+        # Benign files (DikeDataset only)
+        dike_benign = list((DIKE_DIR / "files" / "benign").glob("*"))[:MAX_DIKE_PER_CLASS]
 
-    console.print(f"[bold green]✓ Extracted {len(X)} feature vectors "
-                  f"({int(np.sum(y == 0))} benign, {int(np.sum(y == 1))} malware)[/]")
+        # Malware files from all sources
+        dike_malware = list((DIKE_DIR / "files" / "malware").glob("*"))[:MAX_DIKE_PER_CLASS]
+        zoo_malware = collect_files(DATASET_ROOT / "zoo_extracted", MAX_ZOO_FILES)
+        github_malware = collect_files(DATASET_ROOT / "github_extracted", MAX_GITHUB_FILES)
+        github_malware += collect_files(INQUEST_DIR, MAX_GITHUB_FILES)
+        github_malware += collect_files(FABRI_DIR, MAX_GITHUB_FILES)
+        github_malware += collect_files(JSTROSCH_DIR, MAX_GITHUB_FILES)
+        github_malware += collect_files(ULTIMATE_RAT_DIR, MAX_GITHUB_FILES)
+        # Dedup and trim
+        github_malware = list(set(github_malware))[:MAX_GITHUB_FILES * 4]
+
+        all_malware = dike_malware + zoo_malware + github_malware
+
+        console.print(f"  Benign:  [green]{len(dike_benign)}[/] (DikeDataset)")
+        console.print(f"  Malware: [red]{len(dike_malware)}[/] (DikeDataset) + "
+                      f"[red]{len(zoo_malware)}[/] (theZoo) + "
+                      f"[red]{len(github_malware)}[/] (GitHub repos) = "
+                      f"[bold red]{len(all_malware)}[/] total")
+
+        # 3. Extract features
+        console.rule("[bold]Extracting features")
+
+        with Progress(
+            SpinnerColumn(),
+            TextColumn("[bold]{task.description}"),
+            BarColumn(),
+            TextColumn("[progress.percentage]{task.percentage:>3.0f}%"),
+            TimeRemainingColumn(),
+        ) as progress:
+            task_b = progress.add_task("[green]Benign files…", total=len(dike_benign))
+            f, lbls = extract_features(dike_benign, 0.0, progress, task_b)
+            X.extend(f)
+            y.extend(lbls)
+
+            task_m = progress.add_task("[red]Malware files…", total=len(all_malware))
+            f, lbls = extract_features(all_malware, 1.0, progress, task_m)
+            X.extend(f)
+            y.extend(lbls)
+
+        if len(X) < 10:
+            console.print("[bold red]Too few feature vectors extracted. Exiting.[/]")
+            sys.exit(1)
+
+        X = np.array(X, dtype=np.float32)
+        y = np.array(y, dtype=np.float32)
+
+        console.print(f"[bold green]✓ Extracted {len(X)} feature vectors "
+                      f"({int(np.sum(y == 0))} benign, {int(np.sum(y == 1))} malware)[/]")
+
+        # Upload cache to S3
+        if bucket_name:
+            console.print(f"[bold cyan]☁️ Uploading extracted dataset to S3 ({bucket_name})…[/]")
+            try:
+                local_cache_path.parent.mkdir(parents=True, exist_ok=True)
+                np.savez(local_cache_path, X=X, y=y)
+                s3 = boto3.client('s3')
+                s3.upload_file(str(local_cache_path), bucket_name, cache_file)
+                console.print("[bold green]✓ Uploaded dataset cache to S3![/]")
+            except Exception as e:
+                console.print(f"[bold red]Failed to upload cache to S3: {e}[/]")
 
     # 4. Normalize features (StandardScaler)
     feat_mean = X.mean(axis=0)

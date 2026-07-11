@@ -6,7 +6,7 @@ RUN apt-get update && apt-get install -y \
     wget \
     curl \
     unzip \
-    p7zip-full \
+    p7zip-full unrar \
     build-essential \
     libmagic1 \
     && rm -rf /var/lib/apt/lists/*
