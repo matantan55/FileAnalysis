@@ -63,6 +63,7 @@ INQUEST_DIR = DATASET_ROOT / "inquest"
 FABRI_DIR = DATASET_ROOT / "fabri"
 JSTROSCH_DIR = DATASET_ROOT / "jstrosch"
 ULTIMATE_RAT_DIR = DATASET_ROOT / "ultimate_rat"
+AWS_SAMPLES_DIR = DATASET_ROOT / "aws_samples"
 
 MAX_DIKE_PER_CLASS = 1000
 MAX_ZOO_FILES = 500
@@ -207,6 +208,36 @@ def fetch_github_datasets():
         if extracted > 0:
             console.print(f"[green]✓ Extracted {extracted} GitHub archives.[/]")
 
+def fetch_aws_samples():
+    """Fetch raw malware samples collected by the AWS Data Collector from S3."""
+    bucket = os.environ.get("AWS_S3_BUCKET")
+    if not bucket or not boto3:
+        console.print("[dim]Skipping AWS samples fetch (boto3 or AWS_S3_BUCKET missing)[/]")
+        return
+        
+    console.print(f"[bold cyan]📦 Fetching AWS data collector samples from s3://{bucket}/raw_samples/…[/]")
+    AWS_SAMPLES_DIR.mkdir(parents=True, exist_ok=True)
+    
+    try:
+        s3 = boto3.client('s3')
+        paginator = s3.get_paginator('list_objects_v2')
+        pages = paginator.paginate(Bucket=bucket, Prefix="raw_samples/")
+        
+        count = 0
+        for page in pages:
+            for obj in page.get('Contents', []):
+                key = obj['Key']
+                if key.endswith('/'):
+                    continue
+                    
+                local_path = AWS_SAMPLES_DIR / key.split('/')[-1]
+                if not local_path.exists():
+                    s3.download_file(bucket, key, str(local_path))
+                    count += 1
+                    
+        console.print(f"[green]✓ Downloaded {count} raw samples from AWS S3.[/]")
+    except Exception as e:
+        console.print(f"[bold red]Failed to fetch AWS samples:[/] {e}")
 
 # ──────────────────────────────────────────────────────────────
 # Feature extraction
@@ -333,6 +364,7 @@ def main():
         clone_dike()
         clone_zoo()
         fetch_github_datasets()
+        fetch_aws_samples()
 
         # 2. Collect file paths
         console.rule("[bold]Collecting files")
@@ -348,15 +380,18 @@ def main():
         github_malware += collect_files(FABRI_DIR, MAX_GITHUB_FILES)
         github_malware += collect_files(JSTROSCH_DIR, MAX_GITHUB_FILES)
         github_malware += collect_files(ULTIMATE_RAT_DIR, MAX_GITHUB_FILES)
+        aws_malware = collect_files(AWS_SAMPLES_DIR, MAX_GITHUB_FILES)
+        
         # Dedup and trim
         github_malware = list(set(github_malware))[:MAX_GITHUB_FILES * 4]
 
-        all_malware = dike_malware + zoo_malware + github_malware
+        all_malware = dike_malware + zoo_malware + github_malware + aws_malware
 
         console.print(f"  Benign:  [green]{len(dike_benign)}[/] (DikeDataset)")
         console.print(f"  Malware: [red]{len(dike_malware)}[/] (DikeDataset) + "
                       f"[red]{len(zoo_malware)}[/] (theZoo) + "
-                      f"[red]{len(github_malware)}[/] (GitHub repos) = "
+                      f"[red]{len(github_malware)}[/] (GitHub) + "
+                      f"[red]{len(aws_malware)}[/] (AWS OSINT) = "
                       f"[bold red]{len(all_malware)}[/] total")
 
         # 3. Extract features

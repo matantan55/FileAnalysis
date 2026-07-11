@@ -196,13 +196,10 @@ FileAnalysis/
 
 See [LICENSE](LICENSE) for details.
 
----
+## Cloud Integration & CI/CD
 
-## Roadmap & Future Work
+To ensure the neural network continually stays ahead of zero-day threats, the entire training and release lifecycle is fully automated using **AWS S3** and **GitHub Actions**:
 
-To further scale and automate the malware detection capabilities, the following initiatives are on our future roadmap:
-
-- **Continuous Model Retraining**: Establish an automated, continuous training pipeline that runs daily, ensuring the model stays up-to-date with zero-day behaviors. 
-- **Cloud-Based Data Collection**: Migrate the data collection and feature extraction processes to a centralized cloud environment.
-- **Cloud Storage for Datasets**: Persist all processed datasets and extracted feature vectors in cloud storage (e.g., AWS S3). This eliminates the need to recursively fetch old data on every training run, vastly speeding up the training pipeline.
-- **Automated Versioning & Releases**: Automatically tag and publish a new version of the ThreatNet model alongside each successful daily training run.
+- **Continuous Model Retraining**: A GitHub Actions workflow (`.github/workflows/daily-training.yml`) automatically triggers the Docker sandbox training pipeline every day at midnight UTC.
+- **AWS S3 Caching**: The training pipeline uses `boto3` to communicate with AWS S3 (`AWS_S3_BUCKET`). It automatically downloads pre-computed dataset features (`dataset_cache.npz`) to skip the massive repository cloning and extraction phases, saving substantial compute time. If new data is extracted, the script automatically updates the cache in S3.
+- **Automated Versioning & Releases**: Upon a successful nightly run, if the model weights (`threat_model.pt`) have improved/changed, the CI/CD pipeline automatically commits the updates back to the `main` branch and publishes a new versioned GitHub Release.

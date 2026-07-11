@@ -101,7 +101,6 @@ FileAnalysis/
     ├── intelligence/           # Threat intelligence modules
     │   ├── yara_scanner.py     # YARA rule matching engine
     │   ├── capability_mapper.py # MITRE ATT&CK capability mapping
-    │   └── virustotal.py       # VirusTotal API integration
     │
     ├── scoring/                # Threat scoring engines
     │   ├── scorer.py           # Heuristic weighted scorer (default)
@@ -127,7 +126,6 @@ Stage 2: Common Analyzers      → HashAnalyzer, EntropyAnalyzer, StringAnalyzer
 Stage 3: Format-Specific       → PEAnalyzer / ELFAnalyzer / MachOAnalyzer / etc.
 Stage 4: YARA Scanning         → YaraScanner.scan()
 Stage 5: Capability Mapping    → CapabilityMapper.map_capabilities()
-Stage 6: VirusTotal (optional) → VirusTotalClient.lookup_hash()
 Stage 7: Scoring               → ThreatScorer or NNThreatScorer
 Stage 8: Reporting             → TerminalReporter or JsonReporter
 ```
@@ -148,7 +146,6 @@ Key fields in `AnalysisResult`:
 | `indicators` | `list[Indicator]` | All analyzers |
 | `capabilities` | `list[Capability]` | `CapabilityMapper` |
 | `yara_matches` | `list[YaraMatch]` | `YaraScanner` |
-| `virustotal` | `VirusTotalResult` | `VirusTotalClient` |
 | `risk_score` | `float` | Scorer (heuristic or NN) |
 | `risk_level` | `RiskLevel` | Scorer |
 | `scoring_method` | `str` | Scorer (`"heuristic"` or `"neural_network"`) |
@@ -228,12 +225,6 @@ WriteProcessMemory API   ──┘
 
 Rules are defined in `CAPABILITY_RULES` — a list of dicts mapping API names and indicator names to capability metadata. The mapper also generates plain-English **environment impact statements**.
 
-### VirusTotal (`virustotal.py`)
-
-- Optional — only runs with `--vt` flag
-- Hash lookup only (no file upload for privacy)
-- Requires API key via `--vt-api-key` or `VT_API_KEY` env var
-
 ---
 
 ## Scoring System
@@ -250,14 +241,13 @@ A hand-tuned weighted formula:
 | Suspicious strings | 20 | URLs +5, IPs +7, crypto +15, shells +3 each |
 | Capabilities | 35 | sum(risk_contribution × 15), capped |
 | YARA matches | 30 | critical +30, high +20, medium +10, low +5 |
-| VirusTotal | bonus | If detected: floor at 75, then +10 |
 
 **Pros:** Transparent, easy to tune, no dependencies.
 **Cons:** Linear combinations can't capture complex feature interactions; thresholds are arbitrary.
 
 ### 2. Neural Network Scorer (`nn_model.py`) — `--nn` flag
 
-A 4-layer MLP that processes 31 features extracted from the `AnalysisResult`. See the [Neural Network Model](#neural-network-model) section below.
+A 4-layer MLP that processes 30 features extracted from the `AnalysisResult`. See the [Neural Network Model](#neural-network-model) section below.
 
 ### Risk Levels (both scorers use the same thresholds)
 
@@ -284,7 +274,7 @@ features.py   →  nn_model.py   →  threat_model.pt
 
 ### Feature Extraction (`features.py`)
 
-The `FeatureExtractor` class converts an `AnalysisResult` into a **31-dimensional float vector**:
+The `FeatureExtractor` class converts an `AnalysisResult` into a **30-dimensional float vector**:
 
 ```python
 extractor = FeatureExtractor()
@@ -302,8 +292,7 @@ Features are organized into 9 groups:
 | Indicators | count, max severity, mean severity | [15–17] |
 | Capabilities | count, max risk, sum risk | [18–20] |
 | YARA | count, has_critical, has_high, severity score | [21–24] |
-| VirusTotal | detected flag | [25] |
-| File type | one-hot (PE, ELF, script, document, Mach-O) | [26–30] |
+| File type | one-hot (PE, ELF, script, document, Mach-O) | [25–29] |
 
 Normalization strategies:
 - **Log-scaling** for file size (`log1p`)
@@ -316,7 +305,7 @@ Normalization strategies:
 **ThreatNet** — a simple but effective MLP:
 
 ```
-Input (31) → Linear(64) → ReLU → Dropout(0.3)
+Input (30) → Linear(64) → ReLU → Dropout(0.3)
            → Linear(32) → ReLU → Dropout(0.3)
            → Linear(16) → ReLU
            → Linear(1)  → Sigmoid → output ∈ [0, 1]
@@ -375,6 +364,13 @@ Target scores are computed using the **same logic as the heuristic scorer**, plu
 - **Train/val split:** 80/20
 - **Output:** `threat_model.pt` saved alongside `nn_model.py`
 
+### Cloud Training Pipeline (`sandbox_train.py` & `.github/workflows/daily-training.yml`)
+
+The model is retrained automatically using a robust CI/CD pipeline:
+- **AWS S3 Caching**: Features and labels are cached in an AWS S3 bucket to skip redundant downloading/extraction.
+- **GitHub Actions**: A cron job triggers the `daily-training.yml` workflow at midnight, spinning up a Docker sandbox, securely passing AWS credentials, and running `sandbox_train.py`.
+- **Automated Releases**: If the model accuracy improves, the workflow automatically commits `threat_model.pt` and `feature_scaler.npz`, and creates a new versioned GitHub Release.
+
 ### Retraining on Real Data
 
 To retrain on your own labeled dataset, see [Training the NN Model on Real Data](#training-the-nn-model-on-real-data).
@@ -393,7 +389,6 @@ Uses the **Rich** library to produce colorful, structured console output:
 - Capabilities list (MITRE ATT&CK-aligned)
 - Environment impact statements
 - YARA matches table
-- VirusTotal results (if enabled)
 
 ### JSON Report (`json_report.py`)
 
@@ -416,14 +411,11 @@ fileanalysis scan suspicious.exe --nn
 # JSON output
 fileanalysis scan suspicious.exe --json
 
-# With VirusTotal lookup
-fileanalysis scan suspicious.exe --vt --vt-api-key YOUR_KEY
-
 # Custom YARA rules
 fileanalysis scan suspicious.exe --yara-rules /path/to/rules/
 
 # Combine flags
-fileanalysis scan suspicious.exe --nn --vt --json
+fileanalysis scan suspicious.exe --nn --json
 ```
 
 All flags:
@@ -431,8 +423,6 @@ All flags:
 | Flag | Description |
 |------|-------------|
 | `--nn` | Use neural network scorer instead of heuristic |
-| `--vt` | Enable VirusTotal hash lookup |
-| `--vt-api-key` | VirusTotal API key (also reads `VT_API_KEY` env var) |
 | `--json` | Output as JSON instead of Rich terminal |
 | `--yara-rules DIR` | Custom YARA rules directory |
 
@@ -527,7 +517,7 @@ StringAnalyzer().analyze(file_path, file_bytes, result)
 YaraScanner().scan(file_path, result)
 CapabilityMapper().map_capabilities(result)
 
-features = extractor.extract(result)  # 31-dim vector
+features = extractor.extract(result)  # 30-dim vector
 label = 1.0 if is_malware else 0.0    # binary label
 ```
 
@@ -555,7 +545,6 @@ python -m fileanalysis.scoring.train --epochs 300 --lr 0.0005
 | `yara-python` | YARA rule matching |
 | `puremagic` | MIME type detection |
 | `lief` | Cross-platform binary parsing |
-| `requests` | HTTP client (VirusTotal) |
 | `ppdeep` | Fuzzy hashing (ssdeep) |
 | `numpy` | Feature vector computation |
 

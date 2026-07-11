@@ -49,7 +49,7 @@ python -m fileanalysis.cli /Users/matanmishali/eh/look_mom_no_boot/main.exe
 ### [sandbox_train.py](fileanalysis/scoring/sandbox_train.py)
 - Clones DikeDataset into `/app/dataset` (inside container only)
 - Runs all 8 analyzers + YARA + CapabilityMapper on each file
-- Extracts 31-dimensional feature vectors via `FeatureExtractor`
+- Extracts 30-dimensional feature vectors via `FeatureExtractor`
 - Trains ThreatNet for 50 epochs with Rich progress bars
 - Saves `threat_model.pt` to the mounted workspace
 

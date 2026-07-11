@@ -25,6 +25,7 @@ from fileanalysis.reporting.json_report import JsonReporter
 from fileanalysis.reporting.terminal_report import TerminalReporter
 from fileanalysis.scoring.scorer import ThreatScorer
 from fileanalysis.scoring.nn_model import NNThreatScorer
+from fileanalysis.intelligence.ai_insights import AIInsightsGenerator
 
 
 def _has_internet() -> bool:
@@ -54,8 +55,8 @@ def cli(file_path: str, json_format: bool, yara_rules: str | None) -> None:
         transient=True,
         disable=not show_progress,
     ) as progress:
-        # Total steps: load(1) + common(3) + format(1) + yara(1) + mitre(1) + heuristic(1) + nn(1) = 9
-        task = progress.add_task("Scanning…", total=9)
+        # Total steps: load(1) + common(3) + format(1) + yara(1) + mitre(1) + heuristic(1) + nn(1) + ai(1) = 10
+        task = progress.add_task("Scanning…", total=10)
 
         # 1. Load file
         progress.update(task, description="📂 Loading file…")
@@ -124,6 +125,15 @@ def cli(file_path: str, json_format: bool, yara_rules: str | None) -> None:
             result.scoring_method = "dual"
         except (FileNotFoundError, Exception):
             result.scoring_method = "heuristic"
+        progress.advance(task)
+
+        # 8. AI Insights Generation
+        progress.update(task, description="💡 Generating AI insights…")
+        try:
+            ai_gen = AIInsightsGenerator()
+            result.ai_summary = ai_gen.generate(result)
+        except Exception:
+            pass
         progress.advance(task)
 
     # Render report (to stdout, after progress is cleared)

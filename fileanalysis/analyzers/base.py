@@ -4,7 +4,7 @@ from __future__ import annotations
 import abc
 from dataclasses import dataclass, field
 from enum import Enum
-from typing import Any
+from typing import Any, Optional
 
 
 class RiskLevel(Enum):
@@ -145,6 +145,7 @@ class AnalysisResult:
     nn_confidence: float = 0.0
     environment_impact: list[str] = field(default_factory=list)
     errors: list[str] = field(default_factory=list)
+    ai_summary: Optional[str] = None
 
 
 class BaseAnalyzer(abc.ABC):

@@ -9,3 +9,7 @@ numpy>=1.24
 
 # Optional: Neural network scoring (install with: pip install torch>=2.0)
 # torch>=2.0
+transformers>=4.37.0
+torch>=2.0.0
+accelerate>=0.26.0
+boto3>=1.34.0

@@ -51,6 +51,12 @@ class TerminalReporter:
         self.console.print(Panel(badge, border_style=h_color, expand=False))
         self.console.print()
 
+        # AI Insights Panel
+        if result.ai_summary:
+            ai_text = Text(result.ai_summary, style="italic")
+            self.console.print(Panel(ai_text, title="💡 AI Executive Insights", border_style="magenta", expand=False))
+            self.console.print()
+
         # Hashes Table
         hash_table = Table(title="🔒 File Hashes", show_header=True, header_style="bold green")
         hash_table.add_column("Type", style="dim", width=12)
