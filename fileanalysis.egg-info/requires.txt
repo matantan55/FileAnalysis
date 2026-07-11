@@ -1,0 +1,12 @@
+rich>=13.7
+click>=8.1
+pefile>=2023.2.7
+yara-python>=4.5
+puremagic>=2.2.0
+lief>=0.15
+ppdeep>=20260221
+numpy>=1.24
+transformers>=4.0.0
+
+[nn]
+torch>=2.0

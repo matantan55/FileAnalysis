@@ -10,6 +10,7 @@ Only the trained model weights are saved to the host via /workspace mount.
 """
 
 import os
+import random
 import subprocess
 import sys
 import concurrent.futures
@@ -379,7 +380,12 @@ def main():
         github_malware += collect_files(INQUEST_DIR, MAX_GITHUB_FILES)
         github_malware += collect_files(FABRI_DIR, MAX_GITHUB_FILES)
         github_malware += collect_files(JSTROSCH_DIR, MAX_GITHUB_FILES)
-        github_malware += collect_files(ULTIMATE_RAT_DIR, MAX_GITHUB_FILES)
+        
+        rat_files = collect_files(ULTIMATE_RAT_DIR, 10000)
+        if len(rat_files) > 20:
+            rat_files = random.sample(rat_files, 20)
+        github_malware += rat_files
+        
         aws_malware = collect_files(AWS_SAMPLES_DIR, MAX_GITHUB_FILES)
         
         # Dedup and trim

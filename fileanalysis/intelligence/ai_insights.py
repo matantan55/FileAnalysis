@@ -5,8 +5,27 @@ from __future__ import annotations
 import logging
 
 from fileanalysis.analyzers.base import AnalysisResult
+import os
+import warnings
+
+# Suppress HuggingFace hub progress bars and telemetry warnings before import
+os.environ["HF_HUB_DISABLE_PROGRESS_BARS"] = "1"
+os.environ["HF_HUB_DISABLE_TELEMETRY"] = "1"
+os.environ["TRANSFORMERS_VERBOSITY"] = "error"
+
 from transformers import pipeline
+import transformers
 import torch
+
+# Suppress Python warnings (like the tokenizer deprecations)
+warnings.filterwarnings("ignore", category=FutureWarning)
+warnings.filterwarnings("ignore", category=UserWarning)
+
+transformers.logging.set_verbosity_error()
+
+# Silence the "unauthenticated requests to HF Hub" warning
+import logging as _hf_logging
+_hf_logging.getLogger("huggingface_hub").setLevel(_hf_logging.ERROR)
 
 logger = logging.getLogger(__name__)
 
@@ -26,7 +45,7 @@ class AIInsightsGenerator:
             self._pipe = pipeline(
                 "text-generation",
                 model=self.model_id,
-                torch_dtype=torch.float32,
+                dtype=torch.float32,
                 device="cpu",
             )
             logger.info("AI engine initialized.")

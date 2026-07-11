@@ -3,7 +3,7 @@ name = "fileanalysis"
 version = "1.0.0"
 description = "CLI-based malware file analysis and threat assessment tool"
 readme = "README.md"
-requires-python = ">=3.10"
+requires-python = ">=3.12"
 dependencies = [
     "rich>=13.7",
     "click>=8.1",
@@ -13,6 +13,7 @@ dependencies = [
     "lief>=0.15",
     "ppdeep>=20260221",
     "numpy>=1.24",
+    "transformers>=4.0.0",
 ]
 
 [project.optional-dependencies]
@@ -23,4 +24,7 @@ fileanalysis = "fileanalysis.cli:cli"
 
 [build-system]
 requires = ["setuptools>=68.0"]
-build-backend = "setuptools.backends._legacy:_Backend"
+build-backend = "setuptools.build_meta"
+
+[tool.setuptools.packages.find]
+include = ["fileanalysis*"]
