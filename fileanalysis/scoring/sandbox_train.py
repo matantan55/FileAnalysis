@@ -432,7 +432,7 @@ def _process_worker(fpath, label, q):
         capability_mapper.map_capabilities(result)
 
         feat_vec = extractor.extract(result)
-        q.put((feat_vec, [label], str(fpath)))
+        q.put((feat_vec, label, str(fpath)))
     except Exception:
         pass
 
@@ -652,7 +652,10 @@ def main():
                         tensor[:length] = np.frombuffer(b, dtype=np.uint8)
             except Exception:
                 pass
-            return torch.tensor(tensor, dtype=torch.long), torch.tensor(self.labels[idx], dtype=torch.float32).unsqueeze(0)
+            lbl = self.labels[idx]
+            if isinstance(lbl, np.ndarray) and lbl.ndim > 0:
+                lbl = lbl.item()
+            return torch.tensor(tensor, dtype=torch.long), torch.tensor(lbl, dtype=torch.float32).view(-1)
 
     # 6. Train MalConv (PyTorch)
     console.print("[bold cyan]🔥 Training MalConv (Deep Learning) on raw bytes…[/]")
