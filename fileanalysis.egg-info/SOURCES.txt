@@ -20,7 +20,6 @@ fileanalysis/analyzers/macho_analyzer.py
 fileanalysis/analyzers/pe_analyzer.py
 fileanalysis/analyzers/script_analyzer.py
 fileanalysis/analyzers/strings.py
-fileanalysis/cloud/aws_data_collector.py
 fileanalysis/intelligence/__init__.py
 fileanalysis/intelligence/ai_insights.py
 fileanalysis/intelligence/capability_mapper.py
@@ -30,6 +29,7 @@ fileanalysis/reporting/json_report.py
 fileanalysis/reporting/terminal_report.py
 fileanalysis/scoring/__init__.py
 fileanalysis/scoring/features.py
+fileanalysis/scoring/ml_model.py
 fileanalysis/scoring/nn_model.py
 fileanalysis/scoring/sandbox_train.py
 fileanalysis/scoring/scorer.py

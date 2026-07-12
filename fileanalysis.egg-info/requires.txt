@@ -7,6 +7,8 @@ lief>=0.15
 ppdeep>=20260221
 numpy>=1.24
 transformers>=4.0.0
+lightgbm>=4.0.0
+scikit-learn>=1.3.0
 
 [nn]
 torch>=2.0

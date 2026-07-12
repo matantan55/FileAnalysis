@@ -33,10 +33,13 @@ class TerminalReporter:
         self.console.print()
 
         # Risk Score Panel — show both heuristic and NN scores
+        e_color = self._get_risk_color(result.ensemble_risk_level)
+        badge = f"[bold {e_color}]🏆 Best Score (Ensemble): {result.ensemble_score}/100 — {result.ensemble_risk_level.value.upper()}[/]\n\n"
+        
         h_color = self._get_risk_color(result.risk_level)
-        badge = f"[bold {h_color}]📊 Heuristic: {result.risk_score}/100 — {result.risk_level.value.upper()}[/]"
+        badge += f"[bold {h_color}]📊 Heuristic: {result.risk_score}/100 — {result.risk_level.value.upper()}[/]"
 
-        if result.scoring_method == "dual":
+        if result.scoring_method in ["dual", "triple"]:
             nn_color = self._get_risk_color(result.nn_risk_level)
             # Show confidence as certainty in the prediction direction
             if result.nn_score <= 50:
@@ -47,6 +50,17 @@ class TerminalReporter:
                 conf_label = "malicious"
             badge += f"\n[bold {nn_color}]🧠 Neural Net: {result.nn_score}/100 — {result.nn_risk_level.value.upper()}[/]"
             badge += f"  [dim]({conf_pct:.1f}% confident {conf_label})[/]"
+
+        if result.scoring_method in ["dual_ml", "triple"]:
+            ml_color = self._get_risk_color(result.ml_risk_level)
+            if result.ml_score <= 50:
+                ml_conf_pct = (1.0 - result.ml_confidence) * 100
+                ml_conf_label = "benign"
+            else:
+                ml_conf_pct = result.ml_confidence * 100
+                ml_conf_label = "malicious"
+            badge += f"\n[bold {ml_color}]🌲 LightGBM: {result.ml_score}/100 — {result.ml_risk_level.value.upper()}[/]"
+            badge += f"  [dim]({ml_conf_pct:.1f}% confident {ml_conf_label})[/]"
 
         self.console.print(Panel(badge, border_style=h_color, expand=False))
         self.console.print()

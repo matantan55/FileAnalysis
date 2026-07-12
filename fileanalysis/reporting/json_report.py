@@ -19,8 +19,13 @@ class JsonReporter:
         data["risk_level"] = result.risk_level.value
         data["nn_risk_level"] = result.nn_risk_level.value
         data["nn_score"] = result.nn_score
-        data["scoring_method"] = result.scoring_method
         data["nn_confidence"] = result.nn_confidence
+        data["ml_risk_level"] = result.ml_risk_level.value
+        data["ml_score"] = result.ml_score
+        data["ml_confidence"] = result.ml_confidence
+        data["ensemble_risk_level"] = result.ensemble_risk_level.value
+        data["ensemble_score"] = result.ensemble_score
+        data["scoring_method"] = result.scoring_method
 
         # Convert ThreatCategory keys/values inside indicators and capabilities
         for indicator in data["indicators"]:

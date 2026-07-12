@@ -2,13 +2,13 @@
 
 from __future__ import annotations
 
-import socket
 import sys
 
 import click
 from rich.console import Console
 from rich.progress import Progress, SpinnerColumn, TextColumn, BarColumn, TaskProgressColumn
 
+from fileanalysis.analyzers.base import RiskLevel
 from fileanalysis.analyzers.dll_analyzer import DLLAnalyzer
 from fileanalysis.analyzers.document_analyzer import DocumentAnalyzer
 from fileanalysis.analyzers.elf_analyzer import ELFAnalyzer
@@ -25,16 +25,8 @@ from fileanalysis.reporting.json_report import JsonReporter
 from fileanalysis.reporting.terminal_report import TerminalReporter
 from fileanalysis.scoring.scorer import ThreatScorer
 from fileanalysis.scoring.nn_model import NNThreatScorer
+from fileanalysis.scoring.ml_model import LightGBMThreatScorer
 from fileanalysis.intelligence.ai_insights import AIInsightsGenerator
-
-
-def _has_internet() -> bool:
-    """Quick connectivity check — try to reach DNS root (no HTTP overhead)."""
-    try:
-        socket.create_connection(("8.8.8.8", 53), timeout=2).close()
-        return True
-    except OSError:
-        return False
 
 
 @click.command()
@@ -124,7 +116,44 @@ def cli(file_path: str, json_format: bool, yara_rules: str | None) -> None:
             nn_scorer.calculate_score(result)
             result.scoring_method = "dual"
         except (FileNotFoundError, Exception):
-            result.scoring_method = "heuristic"
+            pass
+
+        # 7.5 LightGBM Machine Learning scoring
+        progress.update(task, description="🌲 Machine learning scoring…")
+        try:
+            ml_scorer = LightGBMThreatScorer()
+            ml_scorer.calculate_score(result)
+            if result.scoring_method == "dual":
+                result.scoring_method = "triple"
+            else:
+                result.scoring_method = "dual_ml"
+        except (FileNotFoundError, ImportError, Exception):
+            if result.scoring_method != "dual":
+                result.scoring_method = "heuristic"
+                
+        # 7.6 Calculate Ensemble Score
+        if result.scoring_method == "triple":
+            # Weighted ensemble: 60% LightGBM (tabular), 40% MalConv (raw bytes)
+            result.ensemble_score = round(0.6 * result.ml_score + 0.4 * result.nn_score, 1)
+        elif result.scoring_method == "dual":
+            result.ensemble_score = result.nn_score
+        elif result.scoring_method == "dual_ml":
+            result.ensemble_score = result.ml_score
+        else:
+            result.ensemble_score = result.risk_score
+            
+        # Determine ensemble risk level
+        if result.ensemble_score <= 20.0:
+            result.ensemble_risk_level = RiskLevel.CLEAN
+        elif result.ensemble_score <= 40.0:
+            result.ensemble_risk_level = RiskLevel.LOW
+        elif result.ensemble_score <= 60.0:
+            result.ensemble_risk_level = RiskLevel.MODERATE
+        elif result.ensemble_score <= 80.0:
+            result.ensemble_risk_level = RiskLevel.HIGH
+        else:
+            result.ensemble_risk_level = RiskLevel.CRITICAL
+            
         progress.advance(task)
 
         # 8. AI Insights Generation

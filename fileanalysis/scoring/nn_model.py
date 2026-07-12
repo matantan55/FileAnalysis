@@ -1,4 +1,4 @@
-"""Neural network threat scoring model (ThreatNet) and inference wrapper."""
+"""Neural network threat scoring model (MalConv) and inference wrapper."""
 
 from __future__ import annotations
 
@@ -13,75 +13,64 @@ if TYPE_CHECKING:
     from fileanalysis.analyzers.base import AnalysisResult
 
 from fileanalysis.analyzers.base import RiskLevel
-from fileanalysis.scoring.features import NUM_FEATURES, FeatureExtractor
 
 logger = logging.getLogger(__name__)
 
 # Default model weights path (alongside this file)
-DEFAULT_MODEL_PATH = Path(__file__).parent / "threat_model.pt"
-DEFAULT_SCALER_PATH = Path(__file__).parent / "feature_scaler.npz"
+DEFAULT_MODEL_PATH = Path(__file__).parent / "threat_model_malconv.pt"
 
+# Maximum length for MalConv byte sequences
+MAX_LEN = 1048576  # 1MB
 
-class ThreatNet(nn.Module):
-    """Multi-layer perceptron for malware threat scoring.
-
-    Input:  30-dimensional feature vector from FeatureExtractor
-    Output: Single scalar in [0, 1] representing threat probability
+class MalConv(nn.Module):
+    """MalConv architecture for raw-byte malware detection.
+    
+    Reads raw bytes up to 1MB and learns temporal spatial features
+    without any manual feature engineering.
     """
 
-    def __init__(self) -> None:
+    def __init__(self, embed_dim=8, channels=128, window_size=500):
         super().__init__()
-        self.network = nn.Sequential(
-            nn.Linear(NUM_FEATURES, 128),
-            nn.BatchNorm1d(128),
-            nn.ReLU(),
-            nn.Dropout(0.3),
-            nn.Linear(128, 64),
-            nn.BatchNorm1d(64),
-            nn.ReLU(),
-            nn.Dropout(0.3),
-            nn.Linear(64, 32),
-            nn.BatchNorm1d(32),
-            nn.ReLU(),
-            nn.Dropout(0.2),
-            nn.Linear(32, 16),
-            nn.ReLU(),
-            nn.Linear(16, 1),
-            nn.Sigmoid(),
-        )
+        # 256 for bytes, +1 for padding (index 256)
+        self.embed = nn.Embedding(257, embed_dim, padding_idx=256)
+        
+        # Gated convolutions
+        self.conv_1 = nn.Conv1d(embed_dim, channels, window_size, stride=window_size)
+        self.conv_2 = nn.Conv1d(embed_dim, channels, window_size, stride=window_size)
+        
+        self.pooling = nn.AdaptiveMaxPool1d(1)
+        self.fc1 = nn.Linear(channels, channels)
+        self.fc2 = nn.Linear(channels, 1)
 
     def forward(self, x: torch.Tensor) -> torch.Tensor:
-        return self.network(x)
+        # x is (batch_size, MAX_LEN)
+        x = self.embed(x)             # (batch, len, embed_dim)
+        x = x.transpose(1, 2)         # (batch, embed_dim, len)
+        
+        conv1 = self.conv_1(x)
+        conv2 = torch.sigmoid(self.conv_2(x))
+        x = conv1 * conv2             # gated convolution
+        
+        x = self.pooling(x).squeeze(-1) # (batch, channels)
+        x = torch.relu(self.fc1(x))
+        x = self.fc2(x)
+        return torch.sigmoid(x)
 
 
 class NNThreatScorer:
-    """Neural network-based threat scorer.
+    """Raw-byte Deep Learning threat scorer.
 
-    Loads a pre-trained ThreatNet model and uses it to score files.
-    Falls back to a clear error if PyTorch is unavailable or weights are missing.
+    Loads a pre-trained MalConv model and uses it to score files directly from bytes.
     """
 
     def __init__(self, model_path: str | Path | None = None) -> None:
         self.torch = torch
         self.model_path = Path(model_path) if model_path else DEFAULT_MODEL_PATH
-        self.scaler_path = self.model_path.parent / "feature_scaler.npz"
-        self.extractor = FeatureExtractor()
-        self.feat_mean, self.feat_std = self._load_scaler()
         self.model = self._load_model()
 
-    def _load_scaler(self):
-        """Load saved feature normalization parameters."""
-        if self.scaler_path.exists():
-            data = np.load(self.scaler_path)
-            logger.info("Loaded feature scaler from %s", self.scaler_path)
-            return data["mean"], data["std"]
-        else:
-            logger.warning("No feature scaler found at %s, using raw features", self.scaler_path)
-            return np.zeros(NUM_FEATURES, dtype=np.float32), np.ones(NUM_FEATURES, dtype=np.float32)
-
     def _load_model(self):
-        """Load the ThreatNet model with pre-trained weights."""
-        model = ThreatNet()
+        """Load the MalConv model with pre-trained weights."""
+        model = MalConv()
 
         if not self.model_path.exists():
             raise FileNotFoundError(
@@ -96,19 +85,32 @@ class NNThreatScorer:
         )
         model.load_state_dict(state_dict)
         model.eval()
-        logger.info("Loaded ThreatNet model from %s", self.model_path)
+        logger.info("Loaded MalConv model from %s", self.model_path)
         return model
 
-    def calculate_score(self, result: AnalysisResult) -> None:
-        """Run NN inference on the AnalysisResult and set nn_score/nn_risk_level.
+    def _get_file_bytes(self, path: str) -> np.ndarray:
+        """Read up to MAX_LEN bytes, padded with 256."""
+        tensor = np.full((MAX_LEN,), 256, dtype=np.int16)
+        
+        try:
+            with open(path, "rb") as f:
+                b = f.read(MAX_LEN)
+                length = len(b)
+                if length > 0:
+                    tensor[:length] = np.frombuffer(b, dtype=np.uint8)
+        except Exception as e:
+            logger.warning(f"Failed to read {path} for MalConv: {e}")
+            
+        return tensor
 
-        This writes to the nn_* fields on AnalysisResult so it can coexist
-        with the heuristic scorer's risk_score/risk_level fields.
-        """
-        # Extract and normalize features
-        features = self.extractor.extract(result)
-        features = (features - self.feat_mean) / (self.feat_std + 1e-8)
-        tensor = self.torch.tensor(features, dtype=self.torch.float32).unsqueeze(0)
+    def calculate_score(self, result: AnalysisResult) -> None:
+        """Run NN inference on the raw file bytes and set nn_score/nn_risk_level."""
+        # Read raw bytes directly from file path
+        if not result.metadata.path:
+            return
+            
+        raw_bytes = self._get_file_bytes(result.metadata.path)
+        tensor = self.torch.tensor(raw_bytes, dtype=self.torch.long).unsqueeze(0)
 
         # Inference (no gradient tracking needed)
         with self.torch.no_grad():

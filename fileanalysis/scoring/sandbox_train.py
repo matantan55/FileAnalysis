@@ -57,7 +57,9 @@ from fileanalysis.intelligence.capability_mapper import CapabilityMapper
 from fileanalysis.intelligence.yara_scanner import YaraScanner
 from fileanalysis.loader import load_file
 from fileanalysis.scoring.features import FeatureExtractor
-from fileanalysis.scoring.nn_model import ThreatNet
+from fileanalysis.scoring.nn_model import MalConv, MAX_LEN
+from torch.utils.data import Dataset
+import lightgbm as lgb
 
 # ──────────────────────────────────────────────────────────────
 # Config
@@ -93,8 +95,11 @@ MAX_DIKE_PER_CLASS = 10000
 MAX_ZOO_FILES = 10000
 MAX_GITHUB_FILES = 10000
 
-WORKSPACE_MODEL_PATH = Path("/workspace/fileanalysis/scoring/threat_model.pt")
-WORKSPACE_SCALER_PATH = Path("/workspace/fileanalysis/scoring/feature_scaler.npz")
+# Workarounds for sandbox paths
+WORKSPACE_DIR = Path("/workspace")
+WORKSPACE_MODEL_PATH = WORKSPACE_DIR / "threat_model_malconv.pt"
+WORKSPACE_LGB_MODEL_PATH = WORKSPACE_DIR / "threat_model_lgb.txt"
+WORKSPACE_SCALER_PATH = WORKSPACE_DIR / "feature_scaler.npz"
 
 console = Console()
 
@@ -627,19 +632,41 @@ def main():
 
     console.print(f"  Train: {len(X_train)} | Val: {len(X_val)}")
 
-    # 6. Train
-    model = ThreatNet()
+    class RawByteDataset(Dataset):
+        def __init__(self, file_paths, labels, max_len=MAX_LEN):
+            self.file_paths = file_paths
+            self.labels = labels
+            self.max_len = max_len
+            
+        def __len__(self):
+            return len(self.file_paths)
+            
+        def __getitem__(self, idx):
+            path = self.file_paths[idx]
+            tensor = np.full((self.max_len,), 256, dtype=np.int16)
+            try:
+                with open(path, "rb") as f:
+                    b = f.read(self.max_len)
+                    length = len(b)
+                    if length > 0:
+                        tensor[:length] = np.frombuffer(b, dtype=np.uint8)
+            except Exception:
+                pass
+            return torch.tensor(tensor, dtype=torch.long), torch.tensor(self.labels[idx], dtype=torch.float32).unsqueeze(0)
+
+    # 6. Train MalConv (PyTorch)
+    console.print("[bold cyan]🔥 Training MalConv (Deep Learning) on raw bytes…[/]")
+    model = MalConv()
     optimizer = torch.optim.Adam(model.parameters(), lr=0.001, weight_decay=1e-4)
     criterion = nn.BCELoss()
-    scheduler = torch.optim.lr_scheduler.CosineAnnealingLR(optimizer, T_max=200)
+    scheduler = torch.optim.lr_scheduler.CosineAnnealingLR(optimizer, T_max=20) # shorter epochs
 
-    train_ds = TensorDataset(torch.tensor(X_train), torch.tensor(y_train))
-    train_loader = DataLoader(train_ds, batch_size=64, shuffle=True)
+    train_ds = RawByteDataset(paths_train, y_train)
+    val_ds = RawByteDataset(paths_val, y_val)
+    train_loader = DataLoader(train_ds, batch_size=32, shuffle=True)
+    val_loader = DataLoader(val_ds, batch_size=32, shuffle=False)
 
-    val_tensor_X = torch.tensor(X_val)
-    val_tensor_y = torch.tensor(y_val)
-
-    epochs = 200
+    epochs = 10 # MalConv takes longer, fewer epochs
     best_val_acc = 0.0
     best_state = None
     console.rule(f"[bold cyan]Training for {epochs} epochs")
@@ -669,10 +696,16 @@ def main():
 
             # Validation accuracy
             model.eval()
+            val_correct = 0
+            val_total = 0
             with torch.no_grad():
-                val_out = model(val_tensor_X)
-                val_preds = (val_out >= 0.5).float()
-                val_acc = (val_preds == val_tensor_y).float().mean().item() * 100
+                for v_batch_X, v_batch_y in val_loader:
+                    v_out = model(v_batch_X)
+                    v_preds = (v_out >= 0.5).float()
+                    val_correct += (v_preds == v_batch_y).float().sum().item()
+                    val_total += len(v_batch_y)
+                    
+            val_acc = (val_correct / max(val_total, 1)) * 100
 
             if val_acc > best_val_acc:
                 best_val_acc = val_acc
@@ -692,13 +725,17 @@ def main():
     # 7. Final evaluation
     console.rule("[bold]Final Evaluation")
     model.eval()
+    val_preds_list = []
+    val_true_list = []
     with torch.no_grad():
-        val_out = model(val_tensor_X)
-        val_preds = (val_out >= 0.5).float().squeeze()
-        val_true = val_tensor_y.squeeze()
+        for v_batch_X, v_batch_y in val_loader:
+            v_out = model(v_batch_X)
+            v_preds = (v_out >= 0.5).float()
+            val_preds_list.append(v_preds)
+            val_true_list.append(v_batch_y)
 
-    val_preds_np = val_preds.numpy()
-    val_true_np = val_true.numpy()
+    val_preds_np = torch.cat(val_preds_list).view(-1).numpy()
+    val_true_np = torch.cat(val_true_list).view(-1).numpy()
 
     tp = ((val_preds_np == 1) & (val_true_np == 1)).sum().item()
     tn = ((val_preds_np == 0) & (val_true_np == 0)).sum().item()
@@ -751,11 +788,71 @@ def main():
     console.print(f"[bold yellow]⚠ Exported {len(fp_paths)} false positives to {fp_file}[/]")
     console.print(f"[bold yellow]⚠ Exported {len(fn_paths)} false negatives to {fn_file}[/]")
 
-    # 8. Save model and scaler
+    # 8. Train LightGBM model
+    console.rule("[bold]Training LightGBM Baseline")
+    lgb_train = lgb.Dataset(X_train, y_train)
+    lgb_val = lgb.Dataset(X_val, y_val, reference=lgb_train)
+
+    params = {
+        'objective': 'binary',
+        'metric': 'binary_logloss',
+        'boosting_type': 'gbdt',
+        'learning_rate': 0.05,
+        'num_leaves': 31,
+        'verbose': -1
+    }
+
+    # Train LightGBM with early stopping
+    evals_result = {}
+    lgb_model = lgb.train(
+        params,
+        lgb_train,
+        num_boost_round=1000,
+        valid_sets=[lgb_train, lgb_val],
+        callbacks=[
+            lgb.early_stopping(stopping_rounds=50),
+            lgb.record_evaluation(evals_result)
+        ]
+    )
+
+    # 9. Evaluate LightGBM
+    console.rule("[bold]LightGBM Final Evaluation")
+    val_preds_lgb_prob = lgb_model.predict(X_val)
+    val_preds_lgb = (val_preds_lgb_prob >= 0.5).astype(int)
+
+    tp_lgb = ((val_preds_lgb == 1) & (val_true_np == 1)).sum().item()
+    tn_lgb = ((val_preds_lgb == 0) & (val_true_np == 0)).sum().item()
+    fp_lgb = ((val_preds_lgb == 1) & (val_true_np == 0)).sum().item()
+    fn_lgb = ((val_preds_lgb == 0) & (val_true_np == 1)).sum().item()
+
+    acc_lgb = (tp_lgb + tn_lgb) / max(tp_lgb + tn_lgb + fp_lgb + fn_lgb, 1) * 100
+    prec_lgb = tp_lgb / max(tp_lgb + fp_lgb, 1) * 100
+    rec_lgb = tp_lgb / max(tp_lgb + fn_lgb, 1) * 100
+    f1_lgb = 2 * prec_lgb * rec_lgb / max(prec_lgb + rec_lgb, 1)
+    fpr_lgb = fp_lgb / max(fp_lgb + tn_lgb, 1) * 100
+    fnr_lgb = fn_lgb / max(fn_lgb + tp_lgb, 1) * 100
+    spec_lgb = tn_lgb / max(tn_lgb + fp_lgb, 1) * 100
+
+    metrics_table_lgb = Table(title="🌲 LightGBM Validation Metrics")
+    metrics_table_lgb.add_column("Metric", style="bold")
+    metrics_table_lgb.add_column("Value", style="cyan")
+    metrics_table_lgb.add_row("Accuracy", f"{acc_lgb:.1f}%")
+    metrics_table_lgb.add_row("Precision", f"{prec_lgb:.1f}%")
+    metrics_table_lgb.add_row("Recall", f"{rec_lgb:.1f}%")
+    metrics_table_lgb.add_row("F1 Score", f"{f1_lgb:.1f}%")
+    metrics_table_lgb.add_row("False Positive Rate (FPR)", f"{fpr_lgb:.1f}%")
+    metrics_table_lgb.add_row("False Negative Rate (FNR)", f"{fnr_lgb:.1f}%")
+    metrics_table_lgb.add_row("Specificity (TNR)", f"{spec_lgb:.1f}%")
+    console.print(metrics_table_lgb)
+
+    # 10. Save models and scaler
     console.rule("[bold]Saving")
     WORKSPACE_MODEL_PATH.parent.mkdir(parents=True, exist_ok=True)
     torch.save(model.state_dict(), WORKSPACE_MODEL_PATH)
-    console.print(f"[bold green]✓ Model saved to {WORKSPACE_MODEL_PATH}[/]")
+    console.print(f"[bold green]✓ PyTorch Model saved to {WORKSPACE_MODEL_PATH}[/]")
+
+    lgb_model.save_model(str(WORKSPACE_LGB_MODEL_PATH))
+    console.print(f"[bold green]✓ LightGBM Model saved to {WORKSPACE_LGB_MODEL_PATH}[/]")
 
     np.savez(WORKSPACE_SCALER_PATH, mean=feat_mean, std=feat_std)
     console.print(f"[bold green]✓ Scaler saved to {WORKSPACE_SCALER_PATH}[/]")

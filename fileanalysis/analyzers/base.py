@@ -143,6 +143,11 @@ class AnalysisResult:
     nn_score: float = 0.0
     nn_risk_level: RiskLevel = RiskLevel.CLEAN
     nn_confidence: float = 0.0
+    ml_score: float = 0.0
+    ml_risk_level: RiskLevel = RiskLevel.CLEAN
+    ml_confidence: float = 0.0
+    ensemble_score: float = 0.0
+    ensemble_risk_level: RiskLevel = RiskLevel.CLEAN
     environment_impact: list[str] = field(default_factory=list)
     errors: list[str] = field(default_factory=list)
     ai_summary: Optional[str] = None

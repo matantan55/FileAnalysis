@@ -1,13 +1,17 @@
-name: Daily ThreatNet Training
+name: ThreatNet Training
 
 on:
-  schedule:
-    - cron: '0 0 * * *' # Run daily at midnight UTC
+  push:
+    branches: [main]
   workflow_dispatch: # Allow manual triggering
 
 jobs:
   train-and-release:
     runs-on: ubuntu-latest
+    # Run only if triggered manually OR if the push commit message contains --train
+    if: >-
+      github.event_name == 'workflow_dispatch' ||
+      (github.event_name == 'push' && contains(github.event.head_commit.message, '--train'))
     permissions:
       contents: write # Required for committing files and creating releases
     
@@ -31,7 +35,7 @@ jobs:
       - name: Check for Model Updates
         id: check_changes
         run: |
-          if git diff --exit-code fileanalysis/scoring/threat_model.pt fileanalysis/scoring/feature_scaler.npz; then
+          if git diff --exit-code fileanalysis/scoring/threat_model_malconv.pt fileanalysis/scoring/threat_model_lgb.txt fileanalysis/scoring/feature_scaler.npz; then
             echo "No changes detected in model weights."
             echo "changed=false" >> $GITHUB_OUTPUT
           else
@@ -44,8 +48,8 @@ jobs:
         run: |
           git config --local user.email "github-actions[bot]@users.noreply.github.com"
           git config --local user.name "github-actions[bot]"
-          git add fileanalysis/scoring/threat_model.pt fileanalysis/scoring/feature_scaler.npz
-          git commit -m "🤖 Automate daily ThreatNet model retraining"
+          git add fileanalysis/scoring/threat_model_malconv.pt fileanalysis/scoring/threat_model_lgb.txt fileanalysis/scoring/feature_scaler.npz
+          git commit -m "🤖 Automate ThreatNet model retraining"
           git push
 
       - name: Create GitHub Release
@@ -59,5 +63,5 @@ jobs:
           
           gh release create "$RELEASE_TAG" \
             --title "ThreatNet Model Release $RELEASE_TAG" \
-            --notes "Automated daily ThreatNet retraining run on aggregated malware datasets." \
-            fileanalysis/scoring/threat_model.pt fileanalysis/scoring/feature_scaler.npz
+            --notes "Automated ThreatNet retraining run on aggregated malware datasets." \
+            fileanalysis/scoring/threat_model_malconv.pt fileanalysis/scoring/threat_model_lgb.txt fileanalysis/scoring/feature_scaler.npz
