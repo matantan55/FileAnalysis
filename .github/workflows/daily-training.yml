@@ -17,28 +17,15 @@ jobs:
         with:
           fetch-depth: 0 # Need full history to push commits
 
-      - name: Configure AWS Credentials
-        uses: aws-actions/configure-aws-credentials@v4
-        with:
-          aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY_ID }}
-          aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
-          aws-region: us-east-1
+
 
       - name: Build Sandbox Docker Image
         run: docker build -t fileanalysis-sandbox -f Dockerfile.sandbox .
 
       - name: Run Cloud Training Pipeline
-        env:
-          AWS_S3_BUCKET: ${{ vars.AWS_S3_BUCKET }}
         run: |
-          # Pass AWS credentials securely into the container environment
           docker run --rm \
             -v "${{ github.workspace }}:/workspace" \
-            -e AWS_S3_BUCKET="$AWS_S3_BUCKET" \
-            -e AWS_ACCESS_KEY_ID \
-            -e AWS_SECRET_ACCESS_KEY \
-            -e AWS_SESSION_TOKEN \
-            -e AWS_DEFAULT_REGION="us-east-1" \
             fileanalysis-sandbox
 
       - name: Check for Model Updates

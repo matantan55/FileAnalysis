@@ -17,8 +17,9 @@ import concurrent.futures
 import multiprocessing
 from pathlib import Path
 
-import boto3
-from botocore.exceptions import ClientError
+import csv
+import urllib.request
+import urllib.error
 
 import numpy as np
 import torch
@@ -64,7 +65,10 @@ INQUEST_DIR = DATASET_ROOT / "inquest"
 FABRI_DIR = DATASET_ROOT / "fabri"
 JSTROSCH_DIR = DATASET_ROOT / "jstrosch"
 ULTIMATE_RAT_DIR = DATASET_ROOT / "ultimate_rat"
-AWS_SAMPLES_DIR = DATASET_ROOT / "aws_samples"
+URLHAUS_DIR = DATASET_ROOT / "urlhaus"
+URLHAUS_CSV = "https://urlhaus.abuse.ch/downloads/csv_recent/"
+MAX_URLHAUS_DOWNLOADS = 50
+TIMEOUT_SEC = 10
 
 MAX_DIKE_PER_CLASS = 1000
 MAX_ZOO_FILES = 500
@@ -209,36 +213,57 @@ def fetch_github_datasets():
         if extracted > 0:
             console.print(f"[green]✓ Extracted {extracted} GitHub archives.[/]")
 
-def fetch_aws_samples():
-    """Fetch raw malware samples collected by the AWS Data Collector from S3."""
-    bucket = os.environ.get("AWS_S3_BUCKET")
-    if not bucket or not boto3:
-        console.print("[dim]Skipping AWS samples fetch (boto3 or AWS_S3_BUCKET missing)[/]")
+def fetch_urlhaus_samples():
+    """Fetch raw malware samples directly from URLhaus instead of AWS."""
+    console.print("[bold cyan]📦 Fetching recent malware samples from URLhaus…[/]")
+    URLHAUS_DIR.mkdir(parents=True, exist_ok=True)
+    
+    urls = []
+    try:
+        req = urllib.request.Request(URLHAUS_CSV, headers={'User-Agent': 'Mozilla/5.0'})
+        with urllib.request.urlopen(req, timeout=TIMEOUT_SEC) as response:
+            text = response.read().decode('utf-8')
+            
+        lines = text.splitlines()
+        reader = csv.reader(lines)
+        for row in reader:
+            if not row or row[0].startswith('#'):
+                continue
+            if len(row) > 3 and row[3] == "online":
+                urls.append(row[2])
+                
+    except Exception as e:
+        console.print(f"[bold red]Failed to fetch URLhaus feed: {e}[/]")
         return
         
-    console.print(f"[bold cyan]📦 Fetching AWS data collector samples from s3://{bucket}/raw_samples/…[/]")
-    AWS_SAMPLES_DIR.mkdir(parents=True, exist_ok=True)
-    
-    try:
-        s3 = boto3.client('s3')
-        paginator = s3.get_paginator('list_objects_v2')
-        pages = paginator.paginate(Bucket=bucket, Prefix="raw_samples/")
-        
-        count = 0
-        for page in pages:
-            for obj in page.get('Contents', []):
-                key = obj['Key']
-                if key.endswith('/'):
-                    continue
-                    
-                local_path = AWS_SAMPLES_DIR / key.split('/')[-1]
-                if not local_path.exists():
-                    s3.download_file(bucket, key, str(local_path))
-                    count += 1
-                    
-        console.print(f"[green]✓ Downloaded {count} raw samples from AWS S3.[/]")
-    except Exception as e:
-        console.print(f"[bold red]Failed to fetch AWS samples:[/] {e}")
+    success_count = 0
+    for url in urls:
+        if success_count >= MAX_URLHAUS_DOWNLOADS:
+            break
+            
+        try:
+            req = urllib.request.Request(url, headers={'User-Agent': 'Mozilla/5.0'})
+            with urllib.request.urlopen(req, timeout=TIMEOUT_SEC) as response:
+                payload = response.read()
+                
+            if not payload:
+                continue
+                
+            filename = url.split('/')[-1]
+            if not filename or '?' in filename:
+                filename = f"payload_{success_count}.bin"
+                
+            local_path = URLHAUS_DIR / filename
+            if not local_path.exists():
+                with open(local_path, "wb") as f:
+                    f.write(payload)
+                
+            success_count += 1
+            
+        except Exception:
+            pass
+            
+    console.print(f"[green]✓ Downloaded {success_count} recent samples from URLhaus.[/]")
 
 # ──────────────────────────────────────────────────────────────
 # Feature extraction
@@ -333,39 +358,29 @@ def collect_files(directory: Path, max_files: int = 10000) -> list[Path]:
 def main():
     console.rule("[bold cyan]⚡ ThreatNet Multi-Dataset Training[/]")
 
-    bucket_name = os.environ.get("AWS_S3_BUCKET")
     cache_file = "dataset_cache.npz"
     local_cache_path = DATASET_ROOT / cache_file
 
     X, y = [], []
     used_cache = False
 
-    if bucket_name:
-        console.print(f"[bold cyan]☁️ Checking S3 bucket ({bucket_name}) for cached dataset…[/]")
+    if local_cache_path.exists():
+        console.print(f"[bold cyan]📦 Checking local disk for cached dataset…[/]")
         try:
-            s3 = boto3.client('s3')
-            s3.download_file(bucket_name, cache_file, str(local_cache_path))
-            console.print("[bold green]✓ Downloaded cached dataset from S3![/]")
-            
             data = np.load(local_cache_path)
             X = data['X']
             y = data['y']
             used_cache = True
             console.print(f"[bold green]✓ Loaded {len(X)} feature vectors from cache. Skipping extraction![/]")
-        except ClientError as e:
-            if e.response['Error']['Code'] == "404":
-                console.print("[yellow]⚠ Cache not found in S3. Will extract from scratch.[/]")
-            else:
-                console.print(f"[bold red]Error accessing S3: {e}[/]")
         except Exception as e:
-            console.print(f"[bold red]Failed to load cache: {e}[/]")
+            console.print(f"[yellow]⚠ Failed to load cache: {e}. Will extract from scratch.[/]")
 
     if not used_cache:
         # 1. Fetch all datasets
         clone_dike()
         clone_zoo()
         fetch_github_datasets()
-        fetch_aws_samples()
+        fetch_urlhaus_samples()
 
         # 2. Collect file paths
         console.rule("[bold]Collecting files")
@@ -386,18 +401,18 @@ def main():
             rat_files = random.sample(rat_files, 20)
         github_malware += rat_files
         
-        aws_malware = collect_files(AWS_SAMPLES_DIR, MAX_GITHUB_FILES)
+        urlhaus_malware = collect_files(URLHAUS_DIR, MAX_GITHUB_FILES)
         
         # Dedup and trim
         github_malware = list(set(github_malware))[:MAX_GITHUB_FILES * 4]
 
-        all_malware = dike_malware + zoo_malware + github_malware + aws_malware
+        all_malware = dike_malware + zoo_malware + github_malware + urlhaus_malware
 
         console.print(f"  Benign:  [green]{len(dike_benign)}[/] (DikeDataset)")
         console.print(f"  Malware: [red]{len(dike_malware)}[/] (DikeDataset) + "
                       f"[red]{len(zoo_malware)}[/] (theZoo) + "
                       f"[red]{len(github_malware)}[/] (GitHub) + "
-                      f"[red]{len(aws_malware)}[/] (AWS OSINT) = "
+                      f"[red]{len(urlhaus_malware)}[/] (URLhaus) = "
                       f"[bold red]{len(all_malware)}[/] total")
 
         # 3. Extract features
@@ -430,17 +445,14 @@ def main():
         console.print(f"[bold green]✓ Extracted {len(X)} feature vectors "
                       f"({int(np.sum(y == 0))} benign, {int(np.sum(y == 1))} malware)[/]")
 
-        # Upload cache to S3
-        if bucket_name:
-            console.print(f"[bold cyan]☁️ Uploading extracted dataset to S3 ({bucket_name})…[/]")
-            try:
-                local_cache_path.parent.mkdir(parents=True, exist_ok=True)
-                np.savez(local_cache_path, X=X, y=y)
-                s3 = boto3.client('s3')
-                s3.upload_file(str(local_cache_path), bucket_name, cache_file)
-                console.print("[bold green]✓ Uploaded dataset cache to S3![/]")
-            except Exception as e:
-                console.print(f"[bold red]Failed to upload cache to S3: {e}[/]")
+        # Save cache locally
+        console.print(f"[bold cyan]📦 Saving extracted dataset locally…[/]")
+        try:
+            local_cache_path.parent.mkdir(parents=True, exist_ok=True)
+            np.savez(local_cache_path, X=X, y=y)
+            console.print("[bold green]✓ Saved dataset cache locally![/]")
+        except Exception as e:
+            console.print(f"[bold red]Failed to save cache locally: {e}[/]")
 
     # 4. Normalize features (StandardScaler)
     feat_mean = X.mean(axis=0)
