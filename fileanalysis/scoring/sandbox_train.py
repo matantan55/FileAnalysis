@@ -51,7 +51,7 @@ from rich.progress import (
     TimeRemainingColumn,
 )
 from rich.table import Table
-from torch.utils.data import DataLoader, TensorDataset
+from torch.utils.data import DataLoader
 
 from fileanalysis.analyzers.document_analyzer import DocumentAnalyzer
 from fileanalysis.analyzers.elf_analyzer import ELFAnalyzer
@@ -676,60 +676,51 @@ def main():
 
     train_ds = RawByteDataset(paths_train, y_train)
     val_ds = RawByteDataset(paths_val, y_val)
-    train_loader = DataLoader(train_ds, batch_size=16, shuffle=True)
-    val_loader = DataLoader(val_ds, batch_size=16, shuffle=False)
+    train_loader = DataLoader(train_ds, batch_size=4, shuffle=True)
+    val_loader = DataLoader(val_ds, batch_size=4, shuffle=False)
 
     epochs = 10 # MalConv takes longer, fewer epochs
     best_val_acc = 0.0
     best_state = None
     console.rule(f"[bold cyan]Training for {epochs} epochs")
 
-    with Progress(
-        SpinnerColumn(),
-        TextColumn("[bold cyan]{task.description}"),
-        BarColumn(),
-        TextColumn("[progress.percentage]{task.percentage:>3.0f}%"),
-        TimeRemainingColumn(),
-    ) as progress:
-        train_task = progress.add_task("Training…", total=epochs)
+    for epoch in range(epochs):
+        model.train()
+        total_loss = 0
+        for batch_idx, (batch_X, batch_y) in enumerate(train_loader):
+            optimizer.zero_grad()
+            out = model(batch_X)
+            loss = criterion(out, batch_y)
+            loss.backward()
+            optimizer.step()
+            total_loss += loss.item()
+            
+            # Print progress every 100 batches to keep logs readable
+            if (batch_idx + 1) % 100 == 0:
+                print(f"  [Epoch {epoch+1}] Batch {batch_idx+1}/{len(train_loader)} - Loss: {loss.item():.4f}", flush=True)
 
-        for epoch in range(epochs):
-            model.train()
-            total_loss = 0
-            for batch_X, batch_y in train_loader:
-                optimizer.zero_grad()
-                out = model(batch_X)
-                loss = criterion(out, batch_y)
-                loss.backward()
-                optimizer.step()
-                total_loss += loss.item()
+        avg_loss = total_loss / len(train_loader)
+        scheduler.step()
 
-            avg_loss = total_loss / len(train_loader)
-            scheduler.step()
+        # Validation accuracy
+        model.eval()
+        val_correct = 0
+        val_total = 0
+        with torch.no_grad():
+            for v_batch_X, v_batch_y in val_loader:
+                v_out = model(v_batch_X)
+                v_preds = (v_out >= 0.5).float()
+                val_correct += (v_preds == v_batch_y).float().sum().item()
+                val_total += len(v_batch_y)
+                
+        val_acc = (val_correct / max(val_total, 1)) * 100
 
-            # Validation accuracy
-            model.eval()
-            val_correct = 0
-            val_total = 0
-            with torch.no_grad():
-                for v_batch_X, v_batch_y in val_loader:
-                    v_out = model(v_batch_X)
-                    v_preds = (v_out >= 0.5).float()
-                    val_correct += (v_preds == v_batch_y).float().sum().item()
-                    val_total += len(v_batch_y)
-                    
-            val_acc = (val_correct / max(val_total, 1)) * 100
+        if val_acc > best_val_acc:
+            best_val_acc = val_acc
+            best_state = {k: v.clone() for k, v in model.state_dict().items()}
 
-            if val_acc > best_val_acc:
-                best_val_acc = val_acc
-                best_state = {k: v.clone() for k, v in model.state_dict().items()}
-
-            lr = optimizer.param_groups[0]["lr"]
-            progress.update(
-                train_task,
-                advance=1,
-                description=f"Epoch {epoch+1}/{epochs} | Loss: {avg_loss:.4f} | Val Acc: {val_acc:.1f}% | LR: {lr:.6f}",
-            )
+        lr = optimizer.param_groups[0]["lr"]
+        print(f"[*] Epoch {epoch+1}/{epochs} Completed | Avg Loss: {avg_loss:.4f} | Val Acc: {val_acc:.1f}% | LR: {lr:.6f}", flush=True)
 
     # Load best model
     if best_state:
