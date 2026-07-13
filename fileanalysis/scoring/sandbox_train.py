@@ -676,10 +676,10 @@ def main():
 
     train_ds = RawByteDataset(paths_train, y_train)
     val_ds = RawByteDataset(paths_val, y_val)
-    train_loader = DataLoader(train_ds, batch_size=4, shuffle=True)
-    val_loader = DataLoader(val_ds, batch_size=4, shuffle=False)
+    train_loader = DataLoader(train_ds, batch_size=16, shuffle=True)
+    val_loader = DataLoader(val_ds, batch_size=16, shuffle=False)
 
-    epochs = 10 # MalConv takes longer, fewer epochs
+    epochs = 5 # Reduced epochs to finish within GitHub Actions limits
     best_val_acc = 0.0
     best_state = None
     console.rule(f"[bold cyan]Training for {epochs} epochs")

@@ -20,7 +20,7 @@ logger = logging.getLogger(__name__)
 DEFAULT_MODEL_PATH = Path(__file__).parent / "threat_model_malconv.pt"
 
 # Maximum length for MalConv byte sequences
-MAX_LEN = 1048576  # 1MB
+MAX_LEN = 262144  # 256KB (reduced from 1MB to speed up training and fix memory limits)
 
 class MalConv(nn.Module):
     """MalConv architecture for raw-byte malware detection.
