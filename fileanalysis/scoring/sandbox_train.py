@@ -26,6 +26,14 @@ import json
 import multiprocessing
 from pathlib import Path
 
+import logging
+import warnings
+import lief
+
+# Suppress noisy parsing warnings from libraries dealing with malformed malware
+logging.getLogger("pefile").setLevel(logging.CRITICAL)
+warnings.filterwarnings("ignore")
+lief.logging.disable()
 import csv
 import urllib.request
 import urllib.error
