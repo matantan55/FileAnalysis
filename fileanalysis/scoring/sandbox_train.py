@@ -659,6 +659,8 @@ def main():
 
     # 6. Train MalConv (PyTorch)
     console.print("[bold cyan]🔥 Training MalConv (Deep Learning) on raw bytes…[/]")
+    import torch
+    torch.set_num_threads(2) # Prevent CPU thread explosion segfault in Docker
     model = MalConv()
     optimizer = torch.optim.Adam(model.parameters(), lr=0.001, weight_decay=1e-4)
     criterion = nn.BCELoss()
@@ -666,8 +668,8 @@ def main():
 
     train_ds = RawByteDataset(paths_train, y_train)
     val_ds = RawByteDataset(paths_val, y_val)
-    train_loader = DataLoader(train_ds, batch_size=32, shuffle=True)
-    val_loader = DataLoader(val_ds, batch_size=32, shuffle=False)
+    train_loader = DataLoader(train_ds, batch_size=16, shuffle=True)
+    val_loader = DataLoader(val_ds, batch_size=16, shuffle=False)
 
     epochs = 10 # MalConv takes longer, fewer epochs
     best_val_acc = 0.0
