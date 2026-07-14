@@ -35,7 +35,8 @@ jobs:
       - name: Check for Model Updates
         id: check_changes
         run: |
-          if git diff --exit-code fileanalysis/scoring/threat_model_malconv.pt fileanalysis/scoring/threat_model_lgb.txt fileanalysis/scoring/feature_scaler.npz; then
+          git add fileanalysis/scoring/threat_model_malconv.pt fileanalysis/scoring/threat_model_lgb.txt fileanalysis/scoring/feature_scaler.npz || true
+          if git diff --staged --quiet; then
             echo "No changes detected in model weights."
             echo "changed=false" >> $GITHUB_OUTPUT
           else
