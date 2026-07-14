@@ -6,7 +6,7 @@ Fetches malware and benign files from many sources:
     2. theZoo (GitHub) — curated malware in password-protected zips
     3. InQuest / fabrimagic72 / jstrosch / Ultimate-RAT (GitHub)
     4. URLhaus (abuse.ch) — live malware URLs
-    5. MalwareBazaar (abuse.ch) — bulk recent PE/ELF/doc malware
+    5. Endermanch/MalwareDatabase — bulk recent PE/ELF/doc malware
     6. vx-underground (GitHub) — malware source code & samples
     7. Das Malwerk (GitHub) — curated malware samples
   Benign:
@@ -90,13 +90,12 @@ ULTIMATE_RAT_DIR = DATASET_ROOT / "ultimate_rat"
 VXUG_DIR = DATASET_ROOT / "vxunderground"
 DAS_MALWERK_DIR = DATASET_ROOT / "das_malwerk"
 URLHAUS_DIR = DATASET_ROOT / "urlhaus"
-BAZAAR_DIR = DATASET_ROOT / "bazaar"
+ENDERMANCH_DIR = DATASET_ROOT / "endermanch"
 SYSTEM_BENIGN_DIR = DATASET_ROOT / "system_benign"
 
+ENDERMANCH_REPO = "https://github.com/Endermanch/MalwareDatabase.git"
 URLHAUS_CSV = "https://urlhaus.abuse.ch/downloads/csv_recent/"
-BAZAAR_API = "https://mb-api.abuse.ch/api/v1/"
 MAX_URLHAUS_DOWNLOADS = 5000
-MAX_BAZAAR_DOWNLOADS = 2000
 TIMEOUT_SEC = 15
 
 MAX_DIKE_PER_CLASS = 10000
@@ -104,7 +103,7 @@ MAX_ZOO_FILES = 10000
 MAX_GITHUB_FILES = 10000
 
 # Workarounds for sandbox paths
-WORKSPACE_DIR = Path("/workspace")
+WORKSPACE_DIR = Path("/workspace/fileanalysis/scoring")
 WORKSPACE_MODEL_PATH = WORKSPACE_DIR / "threat_model_malconv.pt"
 WORKSPACE_LGB_MODEL_PATH = WORKSPACE_DIR / "threat_model_lgb.txt"
 WORKSPACE_SCALER_PATH = WORKSPACE_DIR / "feature_scaler.npz"
@@ -195,6 +194,7 @@ def fetch_github_datasets():
         ("Ultimate-RAT-Collection", "https://github.com/Cryakl/Ultimate-RAT-Collection.git", ULTIMATE_RAT_DIR),
         ("vx-underground", VXUG_REPO, VXUG_DIR),
         ("Das Malwerk", DAS_MALWERK_REPO, DAS_MALWERK_DIR),
+        ("Endermanch", ENDERMANCH_REPO, ENDERMANCH_DIR),
     ]
 
     for name, repo_url, target_dir in datasets:
@@ -217,7 +217,7 @@ def fetch_github_datasets():
     extract_dir.mkdir(parents=True, exist_ok=True)
     
     zips = []
-    for d in [INQUEST_DIR, FABRI_DIR, JSTROSCH_DIR, ULTIMATE_RAT_DIR, VXUG_DIR, DAS_MALWERK_DIR]:
+    for d in [INQUEST_DIR, FABRI_DIR, JSTROSCH_DIR, ULTIMATE_RAT_DIR, VXUG_DIR, DAS_MALWERK_DIR, ENDERMANCH_DIR]:
         if d.exists():
             zips.extend(list(d.rglob("*.zip")))
             zips.extend(list(d.rglob("*.7z")))
@@ -252,56 +252,6 @@ def fetch_github_datasets():
             console.print(f"[green]✓ Extracted {extracted} GitHub archives.[/]")
 
 
-def fetch_bazaar_samples():
-    """Fetch recent malware samples from MalwareBazaar bulk API."""
-    console.print("[bold cyan]📦 Fetching recent malware from MalwareBazaar…[/]")
-    BAZAAR_DIR.mkdir(parents=True, exist_ok=True)
-
-    # Query recent samples by file type
-    tags_to_query = ["exe", "dll", "elf", "doc", "docx", "xls", "pdf", "js", "vbs", "ps1", "msi", "apk"]
-    success_count = 0
-
-    for tag in tags_to_query:
-        if success_count >= MAX_BAZAAR_DOWNLOADS:
-            break
-        try:
-            data = urllib.parse.urlencode({"query": "get_taginfo", "tag": tag, "limit": 200}).encode()
-            req = urllib.request.Request(BAZAAR_API, data=data, headers={'User-Agent': 'Mozilla/5.0'})
-            with urllib.request.urlopen(req, timeout=TIMEOUT_SEC) as response:
-                result = json.loads(response.read().decode('utf-8'))
-
-            if result.get("query_status") != "ok":
-                continue
-
-            for entry in result.get("data", []):
-                if success_count >= MAX_BAZAAR_DOWNLOADS:
-                    break
-                sha256 = entry.get("sha256_hash", "")
-                if not sha256:
-                    continue
-
-                local_path = BAZAAR_DIR / sha256
-                if local_path.exists():
-                    success_count += 1
-                    continue
-
-                # Download the sample via the download endpoint
-                try:
-                    dl_data = urllib.parse.urlencode({"query": "get_file", "sha256_hash": sha256}).encode()
-                    dl_req = urllib.request.Request(BAZAAR_API, data=dl_data, headers={'User-Agent': 'Mozilla/5.0'})
-                    with urllib.request.urlopen(dl_req, timeout=TIMEOUT_SEC) as dl_resp:
-                        payload = dl_resp.read()
-                    if payload and len(payload) > 100:
-                        with open(local_path, "wb") as f:
-                            f.write(payload)
-                        success_count += 1
-                except Exception:
-                    pass
-
-        except Exception as e:
-            console.print(f"[yellow]⚠ MalwareBazaar tag '{tag}': {e}[/]")
-
-    console.print(f"[green]✓ Fetched {success_count} samples from MalwareBazaar.[/]")
 
 
 def collect_system_benign():
@@ -530,7 +480,6 @@ def main():
         clone_zoo()
         fetch_github_datasets()
         fetch_urlhaus_samples()
-        fetch_bazaar_samples()
         collect_system_benign()
 
         # 2. Collect file paths
@@ -551,23 +500,22 @@ def main():
         github_malware += collect_files(ULTIMATE_RAT_DIR, MAX_GITHUB_FILES)
         github_malware += collect_files(VXUG_DIR, MAX_GITHUB_FILES)
         github_malware += collect_files(DAS_MALWERK_DIR, MAX_GITHUB_FILES)
+        github_malware += collect_files(ENDERMANCH_DIR, MAX_GITHUB_FILES)
         
         urlhaus_malware = collect_files(URLHAUS_DIR, MAX_GITHUB_FILES)
-        bazaar_malware = collect_files(BAZAAR_DIR, MAX_BAZAAR_DOWNLOADS)
         
         # Dedup
         github_malware = list(set(github_malware))
 
-        all_malware = dike_malware + zoo_malware + github_malware + urlhaus_malware + bazaar_malware
+        all_malware = dike_malware + zoo_malware + github_malware + urlhaus_malware
 
         console.print(f"  Benign:  [green]{len(dike_benign)}[/] (DikeDataset) + "
                       f"[green]{len(system_benign)}[/] (System) = "
                       f"[bold green]{len(all_benign)}[/] total")
         console.print(f"  Malware: [red]{len(dike_malware)}[/] (DikeDataset) + "
                       f"[red]{len(zoo_malware)}[/] (theZoo) + "
-                      f"[red]{len(github_malware)}[/] (GitHub+vxug+DasMalwerk) + "
-                      f"[red]{len(urlhaus_malware)}[/] (URLhaus) + "
-                      f"[red]{len(bazaar_malware)}[/] (MalwareBazaar) = "
+                      f"[red]{len(github_malware)}[/] (GitHub+Endermanch+vxug) + "
+                      f"[red]{len(urlhaus_malware)}[/] (URLhaus) = "
                       f"[bold red]{len(all_malware)}[/] total")
 
         # 3. Extract features
