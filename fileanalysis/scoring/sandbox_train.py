@@ -49,6 +49,8 @@ from rich.progress import (
     SpinnerColumn,
     TextColumn,
     TimeRemainingColumn,
+    TimeElapsedColumn,
+    MofNCompleteColumn,
 )
 from rich.table import Table
 from torch.utils.data import DataLoader
@@ -78,7 +80,7 @@ INQUEST_REPO = "https://github.com/InQuest/malware-samples.git"
 FABRI_REPO = "https://github.com/fabrimagic72/malware-samples.git"
 JSTROSCH_REPO = "https://github.com/jstrosch/malware-samples.git"
 VXUG_REPO = "https://github.com/vxunderground/MalwareSourceCode.git"
-DAS_MALWERK_REPO = "https://github.com/dasmalwerk/malware-samples.git"
+RAMADHAN_REPO = "https://github.com/RamadhanAmizudin/malware.git"
 
 DATASET_ROOT = Path("/app/dataset")
 DIKE_DIR = DATASET_ROOT / "DikeDataset"
@@ -88,7 +90,7 @@ FABRI_DIR = DATASET_ROOT / "fabri"
 JSTROSCH_DIR = DATASET_ROOT / "jstrosch"
 ULTIMATE_RAT_DIR = DATASET_ROOT / "ultimate_rat"
 VXUG_DIR = DATASET_ROOT / "vxunderground"
-DAS_MALWERK_DIR = DATASET_ROOT / "das_malwerk"
+RAMADHAN_DIR = DATASET_ROOT / "ramadhan"
 URLHAUS_DIR = DATASET_ROOT / "urlhaus"
 ENDERMANCH_DIR = DATASET_ROOT / "endermanch"
 SYSTEM_BENIGN_DIR = DATASET_ROOT / "system_benign"
@@ -193,7 +195,7 @@ def fetch_github_datasets():
         ("jstrosch (PMAT)", JSTROSCH_REPO, JSTROSCH_DIR),
         ("Ultimate-RAT-Collection", "https://github.com/Cryakl/Ultimate-RAT-Collection.git", ULTIMATE_RAT_DIR),
         ("vx-underground", VXUG_REPO, VXUG_DIR),
-        ("Das Malwerk", DAS_MALWERK_REPO, DAS_MALWERK_DIR),
+        ("Ramadhan", RAMADHAN_REPO, RAMADHAN_DIR),
         ("Endermanch", ENDERMANCH_REPO, ENDERMANCH_DIR),
     ]
 
@@ -217,7 +219,7 @@ def fetch_github_datasets():
     extract_dir.mkdir(parents=True, exist_ok=True)
     
     zips = []
-    for d in [INQUEST_DIR, FABRI_DIR, JSTROSCH_DIR, ULTIMATE_RAT_DIR, VXUG_DIR, DAS_MALWERK_DIR, ENDERMANCH_DIR]:
+    for d in [INQUEST_DIR, FABRI_DIR, JSTROSCH_DIR, ULTIMATE_RAT_DIR, VXUG_DIR, RAMADHAN_DIR, ENDERMANCH_DIR]:
         if d.exists():
             zips.extend(list(d.rglob("*.zip")))
             zips.extend(list(d.rglob("*.7z")))
@@ -499,7 +501,7 @@ def main():
         github_malware += collect_files(JSTROSCH_DIR, MAX_GITHUB_FILES)
         github_malware += collect_files(ULTIMATE_RAT_DIR, MAX_GITHUB_FILES)
         github_malware += collect_files(VXUG_DIR, MAX_GITHUB_FILES)
-        github_malware += collect_files(DAS_MALWERK_DIR, MAX_GITHUB_FILES)
+        github_malware += collect_files(RAMADHAN_DIR, MAX_GITHUB_FILES)
         github_malware += collect_files(ENDERMANCH_DIR, MAX_GITHUB_FILES)
         
         urlhaus_malware = collect_files(URLHAUS_DIR, MAX_GITHUB_FILES)
@@ -524,9 +526,13 @@ def main():
         with Progress(
             SpinnerColumn(),
             TextColumn("[bold]{task.description}"),
+            MofNCompleteColumn(),
             BarColumn(),
             TextColumn("[progress.percentage]{task.percentage:>3.0f}%"),
+            TextColumn("ETA:"),
             TimeRemainingColumn(),
+            TextColumn("Elapsed:"),
+            TimeElapsedColumn(),
         ) as progress:
             task_b = progress.add_task("[green]Benign files…", total=len(all_benign))
             f, lbls, pths = extract_features(all_benign, 0.0, progress, task_b)
