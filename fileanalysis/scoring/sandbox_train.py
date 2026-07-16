@@ -3,7 +3,6 @@
 Fetches malware and benign files from many sources:
   Malware:
     1. DikeDataset (GitHub) — labeled malware PE files
-    2. theZoo (GitHub) — curated malware in password-protected zips
     3. InQuest / fabrimagic72 / jstrosch / Ultimate-RAT (GitHub)
     4. URLhaus (abuse.ch) — live malware URLs
     5. Endermanch/MalwareDatabase — bulk recent PE/ELF/doc malware
@@ -75,7 +74,6 @@ import lightgbm as lgb
 # Config
 # ──────────────────────────────────────────────────────────────
 DIKE_REPO = "https://github.com/iosifache/DikeDataset.git"
-ZOO_REPO = "https://github.com/ytisf/theZoo.git"
 INQUEST_REPO = "https://github.com/InQuest/malware-samples.git"
 FABRI_REPO = "https://github.com/fabrimagic72/malware-samples.git"
 JSTROSCH_REPO = "https://github.com/jstrosch/malware-samples.git"
@@ -84,7 +82,6 @@ RAMADHAN_REPO = "https://github.com/RamadhanAmizudin/malware.git"
 
 DATASET_ROOT = Path("/app/dataset")
 DIKE_DIR = DATASET_ROOT / "DikeDataset"
-ZOO_DIR = DATASET_ROOT / "theZoo"
 INQUEST_DIR = DATASET_ROOT / "inquest"
 FABRI_DIR = DATASET_ROOT / "fabri"
 JSTROSCH_DIR = DATASET_ROOT / "jstrosch"
@@ -101,7 +98,6 @@ MAX_URLHAUS_DOWNLOADS = 5000
 TIMEOUT_SEC = 15
 
 MAX_DIKE_PER_CLASS = 10000
-MAX_ZOO_FILES = 10000
 MAX_GITHUB_FILES = 10000
 
 # Workarounds for sandbox paths
@@ -127,64 +123,6 @@ def clone_dike():
         )
     else:
         console.print("[green]✓ DikeDataset already present.[/]")
-
-
-def clone_zoo():
-    """Clone theZoo and extract password-protected malware zips."""
-    if not ZOO_DIR.exists():
-        console.print("[bold cyan]📦 Cloning theZoo…[/]")
-        ZOO_DIR.parent.mkdir(parents=True, exist_ok=True)
-        subprocess.run(
-            ["git", "clone", "--depth", "1", ZOO_REPO, str(ZOO_DIR)],
-            check=True,
-        )
-    else:
-        console.print("[green]✓ theZoo already present.[/]")
-
-    # Extract password-protected zips (password = "infected")
-    extract_dir = DATASET_ROOT / "zoo_extracted"
-    if extract_dir.exists() and any(extract_dir.iterdir()):
-        console.print("[green]✓ theZoo samples already extracted.[/]")
-        return extract_dir
-
-    extract_dir.mkdir(parents=True, exist_ok=True)
-    malware_dir = ZOO_DIR / "malware" / "Binaries"
-    if not malware_dir.exists():
-        console.print("[yellow]⚠ theZoo Binaries directory not found.[/]")
-        return extract_dir
-
-    zips = list(malware_dir.rglob("*.zip"))
-    console.print(f"[bold]Found {len(zips)} zips in theZoo to extract.[/]")
-
-    extracted = 0
-    with Progress(
-        SpinnerColumn(),
-        TextColumn("[bold yellow]Extracting theZoo"),
-        BarColumn(),
-        TextColumn("[progress.percentage]{task.percentage:>3.0f}%"),
-        TimeRemainingColumn(),
-    ) as progress:
-        task_zoo = progress.add_task("Extracting...", total=min(len(zips), MAX_ZOO_FILES))
-        for zf in zips:
-            if extracted >= MAX_ZOO_FILES:
-                break
-            out_dir = extract_dir / zf.stem
-            out_dir.mkdir(exist_ok=True)
-            try:
-                subprocess.run(
-                    ["7z", "x", "-r", "-pinfected", "-y", f"-o{out_dir}", str(zf)],
-                    check=True,
-                    capture_output=True,
-                    timeout=30,
-                )
-                extracted += 1
-            except (subprocess.CalledProcessError, subprocess.TimeoutExpired):
-                pass
-            finally:
-                progress.update(task_zoo, advance=1)
-
-    console.print(f"[green]✓ Extracted {extracted} theZoo archives.[/]")
-    return extract_dir
 
 
 def fetch_github_datasets():
@@ -479,7 +417,6 @@ def main():
     if not used_cache:
         # 1. Fetch all datasets
         clone_dike()
-        clone_zoo()
         fetch_github_datasets()
         fetch_urlhaus_samples()
         collect_system_benign()
@@ -494,7 +431,6 @@ def main():
 
         # Malware files from all sources
         dike_malware = list((DIKE_DIR / "files" / "malware").glob("*"))[:MAX_DIKE_PER_CLASS]
-        zoo_malware = collect_files(DATASET_ROOT / "zoo_extracted", MAX_ZOO_FILES)
         github_malware = collect_files(DATASET_ROOT / "github_extracted", MAX_GITHUB_FILES)
         github_malware += collect_files(INQUEST_DIR, MAX_GITHUB_FILES)
         github_malware += collect_files(FABRI_DIR, MAX_GITHUB_FILES)
@@ -509,13 +445,12 @@ def main():
         # Dedup
         github_malware = list(set(github_malware))
 
-        all_malware = dike_malware + zoo_malware + github_malware + urlhaus_malware
+        all_malware = dike_malware + github_malware + urlhaus_malware
 
         console.print(f"  Benign:  [green]{len(dike_benign)}[/] (DikeDataset) + "
                       f"[green]{len(system_benign)}[/] (System) = "
                       f"[bold green]{len(all_benign)}[/] total")
         console.print(f"  Malware: [red]{len(dike_malware)}[/] (DikeDataset) + "
-                      f"[red]{len(zoo_malware)}[/] (theZoo) + "
                       f"[red]{len(github_malware)}[/] (GitHub+Endermanch+vxug) + "
                       f"[red]{len(urlhaus_malware)}[/] (URLhaus) = "
                       f"[bold red]{len(all_malware)}[/] total")
