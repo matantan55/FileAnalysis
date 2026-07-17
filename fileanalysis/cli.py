@@ -2,7 +2,12 @@
 
 from __future__ import annotations
 
+import os
 import sys
+
+# Prevent OpenMP segmentation fault on macOS when LightGBM and PyTorch run in same process
+os.environ["KMP_DUPLICATE_LIB_OK"] = "TRUE"
+os.environ["OMP_NUM_THREADS"] = "1"
 
 import click
 from rich.console import Console
@@ -115,7 +120,7 @@ def cli(file_path: str, json_format: bool, yara_rules: str | None) -> None:
             nn_scorer = NNThreatScorer()
             nn_scorer.calculate_score(result)
             result.scoring_method = "dual"
-        except (FileNotFoundError, Exception):
+        except (FileNotFoundError, ImportError, Exception):
             pass
 
         # 7.5 LightGBM Machine Learning scoring
@@ -134,11 +139,11 @@ def cli(file_path: str, json_format: bool, yara_rules: str | None) -> None:
         # 7.6 Calculate Ensemble Score
         if result.scoring_method == "triple":
             # Weighted ensemble: 60% LightGBM (tabular), 40% MalConv (raw bytes)
-            result.ensemble_score = round(0.6 * result.ml_score + 0.4 * result.nn_score, 1)
+            result.ensemble_score = round(0.6 * result.ml_score + 0.4 * getattr(result, 'nn_score', result.risk_score), 1)
         elif result.scoring_method == "dual":
-            result.ensemble_score = result.nn_score
+            result.ensemble_score = getattr(result, 'nn_score', result.risk_score)
         elif result.scoring_method == "dual_ml":
-            result.ensemble_score = result.ml_score
+            result.ensemble_score = getattr(result, 'ml_score', result.risk_score)
         else:
             result.ensemble_score = result.risk_score
             
