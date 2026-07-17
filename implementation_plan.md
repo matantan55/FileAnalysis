@@ -372,11 +372,11 @@ Target scores are computed using the **same logic as the heuristic scorer**, plu
 - **Train/val split:** 80/20
 - **Output:** `threat_model.pt` saved alongside `nn_model.py`
 
-### Cloud Training Pipeline (`sandbox_train.py` & `.github/workflows/daily-training.yml`)
+### Cloud Training Pipeline (`sandbox_train.py` & `.github/workflows/training.yml`)
 
 The model is retrained automatically using a robust CI/CD pipeline:
-- **AWS S3 Caching**: Features and labels are cached in an AWS S3 bucket to skip redundant downloading/extraction.
-- **GitHub Actions**: A cron job triggers the `daily-training.yml` workflow at midnight, spinning up a Docker sandbox, securely passing AWS credentials, and running `sandbox_train.py`.
+- **GitHub Actions Caching**: Features and labels are cached locally in `/workspace/dataset_cache.npz` and persisted across workflow runs using `actions/cache` to skip redundant downloading/extraction.
+- **GitHub Actions**: A cron job triggers the `training.yml` workflow at midnight, spinning up a Docker sandbox and running `sandbox_train.py`.
 - **Automated Releases**: If the model accuracy improves, the workflow automatically commits `threat_model.pt` and `feature_scaler.npz`, and creates a new versioned GitHub Release.
 
 ### Retraining on Real Data

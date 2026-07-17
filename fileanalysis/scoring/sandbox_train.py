@@ -388,7 +388,9 @@ def main():
     console.rule("[bold cyan]⚡ ThreatNet Multi-Dataset Training[/]")
 
     cache_file = "dataset_cache.npz"
-    local_cache_path = DATASET_ROOT / cache_file
+    # Save cache to the mounted workspace so it persists outside the container
+    # and can be cached by GitHub Actions
+    local_cache_path = Path("/workspace") / cache_file
 
     X, y, paths = [], [], []
     used_cache = False

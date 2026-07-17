@@ -6,10 +6,10 @@ puremagic>=2.2.0
 lief>=0.15
 ppdeep>=20260221
 numpy>=1.24
+google-genai>=0.1.2
+lightgbm>=4.0.0
 
 # Optional: Neural network scoring (install with: pip install torch>=2.0)
 # torch>=2.0
 transformers>=4.37.0
 torch>=2.0.0
-accelerate>=0.26.0
-boto3>=1.34.0

@@ -213,8 +213,8 @@ See [LICENSE](LICENSE) for details.
 
 ## Cloud Integration & CI/CD
 
-To ensure the neural network continually stays ahead of zero-day threats, the entire training and release lifecycle is fully automated using **AWS S3** and **GitHub Actions**:
+To ensure the neural network continually stays ahead of zero-day threats, the entire training and release lifecycle is fully automated using **GitHub Actions**:
 
 - **Continuous Model Retraining**: A GitHub Actions workflow (`.github/workflows/daily-training.yml`) automatically triggers the Docker sandbox training pipeline every day at midnight UTC.
-- **AWS S3 Caching**: The training pipeline uses `boto3` to communicate with AWS S3 (`AWS_S3_BUCKET`). It automatically downloads pre-computed dataset features (`dataset_cache.npz`) to skip the massive repository cloning and extraction phases, saving substantial compute time. If new data is extracted, the script automatically updates the cache in S3.
+- **GitHub Actions Caching**: The training pipeline uses the `actions/cache` GitHub action to persist and automatically download pre-computed dataset features (`dataset_cache.npz`) between runs. This skips the massive repository cloning and extraction phases, saving substantial compute time. If new data is extracted, the cache is automatically updated at the end of the workflow.
 - **Automated Versioning & Releases**: Upon a successful nightly run, if the model weights (`threat_model.pt`) have improved/changed, the CI/CD pipeline automatically commits the updates back to the `main` branch and publishes a new versioned GitHub Release.

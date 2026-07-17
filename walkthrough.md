@@ -25,7 +25,6 @@ python -m fileanalysis.cli /path/to/file
 ```bash
 python -m fileanalysis.cli /usr/bin/zip
 python -m fileanalysis.cli ~/Downloads/suspicious.exe
-python -m fileanalysis.cli /Users/matanmishali/eh/look_mom_no_boot/main.exe
 ```
 
 ### Common mistakes
