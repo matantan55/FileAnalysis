@@ -3,8 +3,8 @@
 Fetches malware and benign files from many sources:
   Malware:
     1. DikeDataset (GitHub) — labeled malware PE files
+    2. theZoo (GitHub) — curated malware in password-protected zips
     3. InQuest / fabrimagic72 / jstrosch / Ultimate-RAT (GitHub)
-    4. URLhaus (abuse.ch) — live malware URLs
     5. Endermanch/MalwareDatabase — bulk recent PE/ELF/doc malware
     6. vx-underground (GitHub) — malware source code & samples
     7. Das Malwerk (GitHub) — curated malware samples
@@ -18,10 +18,8 @@ Only the trained model weights are saved to the host via /workspace mount.
 
 import os
 import subprocess
-import sys
 import concurrent.futures
 import hashlib
-import json
 import multiprocessing
 from pathlib import Path
 
@@ -33,10 +31,7 @@ import lief
 logging.getLogger("pefile").setLevel(logging.CRITICAL)
 warnings.filterwarnings("ignore")
 lief.logging.disable()
-import csv
-import urllib.request
-import urllib.error
-import urllib.parse
+
 
 import numpy as np
 import torch
@@ -74,30 +69,22 @@ import lightgbm as lgb
 # Config
 # ──────────────────────────────────────────────────────────────
 DIKE_REPO = "https://github.com/iosifache/DikeDataset.git"
-INQUEST_REPO = "https://github.com/InQuest/malware-samples.git"
-FABRI_REPO = "https://github.com/fabrimagic72/malware-samples.git"
-JSTROSCH_REPO = "https://github.com/jstrosch/malware-samples.git"
 VXUG_REPO = "https://github.com/vxunderground/MalwareSourceCode.git"
-RAMADHAN_REPO = "https://github.com/RamadhanAmizudin/malware.git"
+ZOO_REPO = "https://github.com/ytisf/theZoo.git"
+DAS_MALWERK_REPO = "https://github.com/techbliss/Das-Malwerk.git"
 
 DATASET_ROOT = Path("/app/dataset")
 DIKE_DIR = DATASET_ROOT / "DikeDataset"
-INQUEST_DIR = DATASET_ROOT / "inquest"
-FABRI_DIR = DATASET_ROOT / "fabri"
-JSTROSCH_DIR = DATASET_ROOT / "jstrosch"
-ULTIMATE_RAT_DIR = DATASET_ROOT / "ultimate_rat"
 VXUG_DIR = DATASET_ROOT / "vxunderground"
-RAMADHAN_DIR = DATASET_ROOT / "ramadhan"
-URLHAUS_DIR = DATASET_ROOT / "urlhaus"
 ENDERMANCH_DIR = DATASET_ROOT / "endermanch"
 SYSTEM_BENIGN_DIR = DATASET_ROOT / "system_benign"
+ZOO_DIR = DATASET_ROOT / "theZoo"
+DAS_MALWERK_DIR = DATASET_ROOT / "das_malwerk"
 
 ENDERMANCH_REPO = "https://github.com/Endermanch/MalwareDatabase.git"
-URLHAUS_CSV = "https://urlhaus.abuse.ch/downloads/csv_recent/"
-MAX_URLHAUS_DOWNLOADS = 5000
-TIMEOUT_SEC = 15
 
 MAX_DIKE_PER_CLASS = 10000
+MAX_ZOO_FILES = 10000
 MAX_GITHUB_FILES = 10000
 
 # Workarounds for sandbox paths
@@ -125,16 +112,69 @@ def clone_dike():
         console.print("[green]✓ DikeDataset already present.[/]")
 
 
+def clone_zoo():
+    """Clone theZoo and extract password-protected malware zips."""
+    if not ZOO_DIR.exists():
+        console.print("[bold cyan]📦 Cloning theZoo…[/]")
+        ZOO_DIR.parent.mkdir(parents=True, exist_ok=True)
+        subprocess.run(
+            ["git", "clone", "--depth", "1", ZOO_REPO, str(ZOO_DIR)],
+            check=True,
+        )
+    else:
+        console.print("[green]✓ theZoo already present.[/]")
+
+    # Extract password-protected zips (password = "infected")
+    extract_dir = DATASET_ROOT / "zoo_extracted"
+    if extract_dir.exists() and any(extract_dir.iterdir()):
+        console.print("[green]✓ theZoo samples already extracted.[/]")
+        return extract_dir
+
+    extract_dir.mkdir(parents=True, exist_ok=True)
+    malware_dir = ZOO_DIR / "malware" / "Binaries"
+    if not malware_dir.exists():
+        console.print("[yellow]⚠ theZoo Binaries directory not found.[/]")
+        return extract_dir
+
+    zips = list(malware_dir.rglob("*.zip"))
+    console.print(f"[bold]Found {len(zips)} zips in theZoo to extract.[/]")
+
+    extracted = 0
+    with Progress(
+        SpinnerColumn(),
+        TextColumn("[bold yellow]Extracting theZoo"),
+        BarColumn(),
+        TextColumn("[progress.percentage]{task.percentage:>3.0f}%"),
+        TimeRemainingColumn(),
+    ) as progress:
+        task_zoo = progress.add_task("Extracting...", total=min(len(zips), MAX_ZOO_FILES))
+        for zf in zips:
+            if extracted >= MAX_ZOO_FILES:
+                break
+            out_dir = extract_dir / zf.stem
+            out_dir.mkdir(exist_ok=True)
+            try:
+                subprocess.run(
+                    ["7z", "x", "-r", "-pinfected", "-y", f"-o{out_dir}", str(zf)],
+                    check=True,
+                    capture_output=True,
+                    timeout=30,
+                )
+                extracted += 1
+            except (subprocess.CalledProcessError, subprocess.TimeoutExpired):
+                pass
+            finally:
+                progress.update(task_zoo, advance=1)
+
+    console.print(f"[green]✓ Extracted {extracted} theZoo archives.[/]")
+    return extract_dir
+
+
 def fetch_github_datasets():
     """Clone GitHub malware datasets."""
     datasets = [
-        ("InQuest", INQUEST_REPO, INQUEST_DIR),
-        ("fabrimagic72", FABRI_REPO, FABRI_DIR),
-        ("jstrosch (PMAT)", JSTROSCH_REPO, JSTROSCH_DIR),
-        ("Ultimate-RAT-Collection", "https://github.com/Cryakl/Ultimate-RAT-Collection.git", ULTIMATE_RAT_DIR),
         ("vx-underground", VXUG_REPO, VXUG_DIR),
-        ("Ramadhan", RAMADHAN_REPO, RAMADHAN_DIR),
-        ("Endermanch", ENDERMANCH_REPO, ENDERMANCH_DIR),
+        ("Das Malwerk", DAS_MALWERK_REPO, DAS_MALWERK_DIR),
     ]
 
     for name, repo_url, target_dir in datasets:
@@ -157,7 +197,7 @@ def fetch_github_datasets():
     extract_dir.mkdir(parents=True, exist_ok=True)
     
     zips = []
-    for d in [INQUEST_DIR, FABRI_DIR, JSTROSCH_DIR, ULTIMATE_RAT_DIR, VXUG_DIR, RAMADHAN_DIR, ENDERMANCH_DIR]:
+    for d in [VXUG_DIR, DAS_MALWERK_DIR]:
         if d.exists():
             zips.extend(list(d.rglob("*.zip")))
             zips.extend(list(d.rglob("*.7z")))
@@ -248,58 +288,6 @@ def collect_system_benign():
             break
 
     console.print(f"[green]✓ Collected {collected} system benign files.[/]")
-
-def fetch_urlhaus_samples():
-    """Fetch raw malware samples directly from URLhaus instead of AWS."""
-    console.print("[bold cyan]📦 Fetching recent malware samples from URLhaus…[/]")
-    URLHAUS_DIR.mkdir(parents=True, exist_ok=True)
-    
-    urls = []
-    try:
-        req = urllib.request.Request(URLHAUS_CSV, headers={'User-Agent': 'Mozilla/5.0'})
-        with urllib.request.urlopen(req, timeout=TIMEOUT_SEC) as response:
-            text = response.read().decode('utf-8')
-            
-        lines = text.splitlines()
-        reader = csv.reader(lines)
-        for row in reader:
-            if not row or row[0].startswith('#'):
-                continue
-            if len(row) > 3 and row[3] == "online":
-                urls.append(row[2])
-                
-    except Exception as e:
-        console.print(f"[bold red]Failed to fetch URLhaus feed: {e}[/]")
-        return
-        
-    success_count = 0
-    for url in urls:
-        if success_count >= MAX_URLHAUS_DOWNLOADS:
-            break
-            
-        try:
-            req = urllib.request.Request(url, headers={'User-Agent': 'Mozilla/5.0'})
-            with urllib.request.urlopen(req, timeout=TIMEOUT_SEC) as response:
-                payload = response.read()
-                
-            if not payload:
-                continue
-                
-            filename = url.split('/')[-1]
-            if not filename or '?' in filename:
-                filename = f"payload_{success_count}.bin"
-                
-            local_path = URLHAUS_DIR / filename
-            if not local_path.exists():
-                with open(local_path, "wb") as f:
-                    f.write(payload)
-                
-            success_count += 1
-            
-        except Exception:
-            pass
-            
-    console.print(f"[green]✓ Downloaded {success_count} recent samples from URLhaus.[/]")
 
 # ──────────────────────────────────────────────────────────────
 # Feature extraction
@@ -417,8 +405,8 @@ def main():
     if not used_cache:
         # 1. Fetch all datasets
         clone_dike()
+        clone_zoo()
         fetch_github_datasets()
-        fetch_urlhaus_samples()
         collect_system_benign()
 
         # 2. Collect file paths
@@ -431,28 +419,22 @@ def main():
 
         # Malware files from all sources
         dike_malware = list((DIKE_DIR / "files" / "malware").glob("*"))[:MAX_DIKE_PER_CLASS]
+        zoo_malware = collect_files(DATASET_ROOT / "zoo_extracted", MAX_ZOO_FILES)
         github_malware = collect_files(DATASET_ROOT / "github_extracted", MAX_GITHUB_FILES)
-        github_malware += collect_files(INQUEST_DIR, MAX_GITHUB_FILES)
-        github_malware += collect_files(FABRI_DIR, MAX_GITHUB_FILES)
-        github_malware += collect_files(JSTROSCH_DIR, MAX_GITHUB_FILES)
-        github_malware += collect_files(ULTIMATE_RAT_DIR, MAX_GITHUB_FILES)
         github_malware += collect_files(VXUG_DIR, MAX_GITHUB_FILES)
-        github_malware += collect_files(RAMADHAN_DIR, MAX_GITHUB_FILES)
-        github_malware += collect_files(ENDERMANCH_DIR, MAX_GITHUB_FILES)
-        
-        urlhaus_malware = collect_files(URLHAUS_DIR, MAX_GITHUB_FILES)
+        github_malware += collect_files(DAS_MALWERK_DIR, MAX_GITHUB_FILES)
         
         # Dedup
         github_malware = list(set(github_malware))
 
-        all_malware = dike_malware + github_malware + urlhaus_malware
+        all_malware = dike_malware + zoo_malware + github_malware
 
         console.print(f"  Benign:  [green]{len(dike_benign)}[/] (DikeDataset) + "
                       f"[green]{len(system_benign)}[/] (System) = "
                       f"[bold green]{len(all_benign)}[/] total")
         console.print(f"  Malware: [red]{len(dike_malware)}[/] (DikeDataset) + "
-                      f"[red]{len(github_malware)}[/] (GitHub+Endermanch+vxug) + "
-                      f"[red]{len(urlhaus_malware)}[/] (URLhaus) = "
+                      f"[red]{len(zoo_malware)}[/] (theZoo) + "
+                      f"[red]{len(github_malware)}[/] (GitHub+vxug+DasMalwerk) = "
                       f"[bold red]{len(all_malware)}[/] total")
 
         # 3. Extract features
@@ -483,7 +465,7 @@ def main():
 
         if len(X) < 10:
             console.print("[bold red]Too few feature vectors extracted. Exiting.[/]")
-            sys.exit(1)
+            exit(1)
 
         X = np.array(X, dtype=np.float32)
         y = np.array(y, dtype=np.float32)
