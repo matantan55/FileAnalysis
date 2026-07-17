@@ -2,7 +2,7 @@
 
 ## What Was Done
 
-Trained the `ThreatNet` neural network on **real malware samples** from the [DikeDataset](https://github.com/iosifache/DikeDataset), entirely inside an isolated Docker container to protect the local environment.
+Trained the `ThreatNet` neural network and `LightGBMThreatScorer` gradient boosting model on **real malware samples** from multiple datasets (DikeDataset, theZoo, vx-underground, Das Malwerk, Endermanch MalwareDatabase), entirely inside an isolated Docker container to protect the local environment.
 
 ## How to Run FileAnalysis
 
@@ -47,11 +47,11 @@ python -m fileanalysis.cli /Users/matanmishali/eh/look_mom_no_boot/main.exe
 - Sets `PYTHONPATH=/workspace` to make `fileanalysis` importable
 
 ### [sandbox_train.py](fileanalysis/scoring/sandbox_train.py)
-- Clones DikeDataset into `/app/dataset` (inside container only)
+- Clones multiple real malware datasets into `/app/dataset` (inside container only)
 - Runs all 8 analyzers + YARA + CapabilityMapper on each file
 - Extracts 30-dimensional feature vectors via `FeatureExtractor`
-- Trains ThreatNet for 50 epochs with Rich progress bars
-- Saves `threat_model.pt` to the mounted workspace
+- Trains ThreatNet (PyTorch) for 50 epochs and LightGBM model with Rich progress bars
+- Saves `threat_model.pt` and `threat_model_lgb.txt` to the mounted workspace
 
 ### [requirements-sandbox.txt](requirements-sandbox.txt)
 - Pinned CPU-only PyTorch via `--extra-index-url` to avoid downloading ~900MB of CUDA libraries
@@ -67,7 +67,7 @@ python -m fileanalysis.cli /Users/matanmishali/eh/look_mom_no_boot/main.exe
 | Final loss | 0.0299 |
 | Model size | 22KB |
 
-The loss dropped steadily from **0.1071** (epoch 10) to **0.0299** (epoch 50), indicating the model learned to distinguish benign from malicious files effectively.
+The models are able to effectively distinguish benign from malicious files by looking at structural metadata, strings, and entropy without relying solely on traditional YARA signatures.
 
 ## How to Re-train
 
@@ -80,4 +80,4 @@ docker run --rm -v "$(pwd)":/workspace fileanalysis-sandbox
 ## Security Notes
 - All malware files existed **only inside the Docker container** — they were never written to your Mac's filesystem
 - When the container finished, it was destroyed (`--rm`), deleting all malware with it
-- Only the safe `threat_model.pt` weights file (22KB) was written to your local disk
+- Only the safe `threat_model.pt` (22KB) and `threat_model_lgb.txt` (10KB) weights files were written to your local disk

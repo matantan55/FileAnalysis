@@ -47,10 +47,22 @@ python -m fileanalysis.cli /usr/bin/zip
 📊 Type: Java bytecode (application/java)
 📏 Size: 396.5 KB (405,984 bytes)
 
-╭───────────────────────────────────────────────────────────╮
-│ 📊 Heuristic: 19.5/100 — CLEAN                            │
-│ 🧠 Neural Net: 0.0/100 — CLEAN  (100.0% confident benign) │
-╰───────────────────────────────────────────────────────────╯
+╭───────────────────────────────────────────────────────────────────╮
+│ 🏆 Best Score (Ensemble): 70.3/100 — HIGH                         │
+│                                                                   │
+│ 📊 Heuristic: 34.0/100 — LOW                                      │
+│ 🧠 Neural Net: 100.0/100 — CRITICAL  (100.0% confident malicious) │
+│ 🌲 LightGBM: 50.5/100 — MODERATE  (50.5% confident malicious)     │
+╰───────────────────────────────────────────────────────────────────╯
+
+╭────────────────── 💡 AI Executive Insights ───────────────────╮
+│ The model classified this file as malicious primarily due to: │
+│ • Embedded URLs (Value: 0)                                    │
+│ • Windows Registry Keys (Value: 1)                            │
+│ • Script File Format (Value: 0)                               │
+│                                                               │
+│ Final ML Score: 50.5/100 (50.5% confidence)                   │
+╰───────────────────────────────────────────────────────────────╯
 
 🔒 File Hashes
   MD5:    a2c7a2266a2d82193aa0a4cc3fbae24e
@@ -93,17 +105,19 @@ FileAnalysis runs a multi-stage pipeline on every file:
 1. **Load** — Reads the file, detects type (PE, ELF, Mach-O, script, document)
 2. **Analyze** — Runs format-specific analyzers (hashing, entropy, advanced strings including CVE/Registry patterns, imports, sections)
 3. **Intelligence** — YARA signature matching + MITRE ATT&CK capability mapping (e.g., Exploitation, Persistence)
-4. **Score** — Dual scoring with both heuristic rules and a neural network
+4. **Score** — Triple scoring with heuristic rules, a neural network, and a LightGBM decision tree model
 5. **Report** — Rich terminal output or JSON
 
 ### Dual Scoring System
 
-Every scan produces **two independent threat scores**:
+Every scan produces **independent threat scores** and an ensemble score:
 
 | Scorer | How it works |
 |--------|-------------|
 | **📊 Heuristic** | Hand-tuned weighted formula (entropy + strings + capabilities + YARA) |
-| **🧠 Neural Net** | 4-layer MLP trained on ~4,000 real malware/benign samples from multiple datasets (DikeDataset, theZoo, InQuest, PMAT, fabrimagic72) |
+| **🧠 Neural Net** | 4-layer MLP trained on real malware/benign samples |
+| **🌲 LightGBM** | Gradient boosting decision tree trained on the same feature set |
+| **💡 AI Insights** | Google Gemini LLM generates an executive summary of the primary threat vectors |
 
 ### Risk Levels
 
@@ -130,10 +144,10 @@ docker run --rm -v "$(pwd)":/workspace fileanalysis-sandbox
 ```
 
 This will:
-1. Clone multiple curated cybersecurity datasets (DikeDataset, theZoo, InQuest, PMAT, fabrimagic72) inside the container
-2. Extract 30-dimensional feature vectors from nearly 4,000 real files
-3. Train ThreatNet for 200 epochs
-4. Save `threat_model.pt` to your local project
+1. Clone multiple curated cybersecurity datasets (DikeDataset, theZoo, vx-underground, Das Malwerk, Endermanch MalwareDatabase) inside the container
+2. Extract 30-dimensional feature vectors from real files
+3. Train ThreatNet (PyTorch) and LightGBM models
+4. Save `threat_model.pt` and `threat_model_lgb.txt` to your local project
 5. Destroy the container (and all malware) when done
 
 ---
@@ -162,10 +176,11 @@ FileAnalysis/
 │   ├── scoring/
 │   │   ├── scorer.py             # Heuristic threat scorer
 │   │   ├── nn_model.py           # ThreatNet neural network
+│   │   ├── ml_model.py           # LightGBM tree model
 │   │   ├── features.py           # 30-dim feature extraction
-│   │   ├── train.py              # Synthetic data training
 │   │   ├── sandbox_train.py      # Real malware training (Docker)
-│   │   └── threat_model.pt       # Trained model weights
+│   │   ├── threat_model.pt       # Trained NN weights
+│   │   └── threat_model_lgb.txt  # Trained LightGBM weights
 │   └── reporting/
 │       ├── terminal_report.py    # Rich terminal output
 │       └── json_report.py        # JSON output

@@ -59,15 +59,15 @@ It supports PE (EXE/DLL), ELF, Mach-O, scripts, and documents. It produces a thr
                    │
           ┌────────┼────────┐
           │                 │
-   ┌──────▼──────┐  ┌──────▼──────┐
-   │  Heuristic  │  │  Neural Net │
-   │   Scorer    │  │   Scorer    │
-   └──────┬──────┘  └──────┬──────┘
-          │                │
-          └────────┬───────┘
+   ┌──────▼──────┐  ┌──────▼──────┐  ┌──────▼──────┐
+   │  Heuristic  │  │  Neural Net │  │  LightGBM   │
+   │   Scorer    │  │   Scorer    │  │   Scorer    │
+   └──────┬──────┘  └──────┬──────┘  └──────┬──────┘
+          │                │                │
+          └────────┬───────┴────────────────┘
                    │
             ┌──────▼───────┐
-            │   Reporter   │  ← Terminal (Rich) or JSON
+            │   Reporter   │  ← Terminal (Rich) + AI Insights (Gemini) or JSON
             └──────────────┘
 ```
 
@@ -103,11 +103,13 @@ FileAnalysis/
     │   ├── capability_mapper.py # MITRE ATT&CK capability mapping
     │
     ├── scoring/                # Threat scoring engines
-    │   ├── scorer.py           # Heuristic weighted scorer (default)
-    │   ├── features.py         # Feature extraction for NN model
+    │   ├── scorer.py           # Heuristic threat scorer
+    │   ├── features.py         # Feature extraction for ML models
     │   ├── nn_model.py         # ThreatNet MLP model + inference wrapper
-    │   ├── train.py            # Training pipeline for ThreatNet
-    │   └── threat_model.pt     # Pre-trained model weights (generated)
+    │   ├── ml_model.py         # LightGBM tree model + inference wrapper
+    │   ├── sandbox_train.py    # Real malware training (Docker)
+    │   ├── threat_model.pt     # Pre-trained NN weights
+    │   └── threat_model_lgb.txt# Pre-trained LightGBM weights
     │
     └── reporting/              # Output formatting
         ├── terminal_report.py  # Rich terminal output
@@ -229,7 +231,7 @@ Rules are defined in `CAPABILITY_RULES` — a list of dicts mapping API names an
 
 ## Scoring System
 
-FileAnalysis has **two scoring engines** that are interchangeable:
+FileAnalysis has **three scoring engines** that run sequentially to provide an ensemble score:
 
 ### 1. Heuristic Scorer (`scorer.py`) — Default
 
@@ -245,11 +247,16 @@ A hand-tuned weighted formula:
 **Pros:** Transparent, easy to tune, no dependencies.
 **Cons:** Linear combinations can't capture complex feature interactions; thresholds are arbitrary.
 
-### 2. Neural Network Scorer (`nn_model.py`) — `--nn` flag
+### 2. Neural Network Scorer (`nn_model.py`)
 
 A 4-layer MLP that processes 30 features extracted from the `AnalysisResult`. See the [Neural Network Model](#neural-network-model) section below.
 
-### Risk Levels (both scorers use the same thresholds)
+### 3. LightGBM Scorer (`ml_model.py`)
+
+A Gradient Boosting Decision Tree model trained on the same 30 features as the Neural Network. It is highly robust to tabular data (which is what the features represent) and typically outperforms Neural Networks on these types of structured features.
+*Note: To prevent OpenMP threading conflicts between LightGBM and PyTorch on macOS, `OMP_NUM_THREADS=1` and `KMP_DUPLICATE_LIB_OK=TRUE` are set at the top of the CLI.*
+
+### Risk Levels (all scorers use the same thresholds)
 
 | Score | Level | Meaning |
 |-------|-------|---------|
@@ -269,6 +276,7 @@ The NN scoring system has three components:
 
 ```
 features.py   →  nn_model.py   →  threat_model.pt
+                 ml_model.py   →  threat_model_lgb.txt
 (extraction)     (architecture)    (trained weights)
 ```
 
@@ -383,7 +391,8 @@ To retrain on your own labeled dataset, see [Training the NN Model on Real Data]
 
 Uses the **Rich** library to produce colorful, structured console output:
 - Header panel with file metadata
-- Color-coded risk score badge (with 🧠 Neural Network indicator when NN scoring is used)
+- Color-coded risk score badge (with Neural Network and LightGBM indicators)
+- **AI Executive Insights**: Powered by Google Gemini to summarize key threat vectors
 - Hash table
 - Entropy gauge
 - Capabilities list (MITRE ATT&CK-aligned)
@@ -402,11 +411,8 @@ Serializes the entire `AnalysisResult` to JSON for programmatic consumption. Inc
 ## CLI Interface
 
 ```bash
-# Basic scan (heuristic scoring)
+# Basic scan
 fileanalysis scan suspicious.exe
-
-# Neural network scoring
-fileanalysis scan suspicious.exe --nn
 
 # JSON output
 fileanalysis scan suspicious.exe --json
@@ -415,14 +421,13 @@ fileanalysis scan suspicious.exe --json
 fileanalysis scan suspicious.exe --yara-rules /path/to/rules/
 
 # Combine flags
-fileanalysis scan suspicious.exe --nn --json
+fileanalysis scan suspicious.exe --json
 ```
 
 All flags:
 
 | Flag | Description |
 |------|-------------|
-| `--nn` | Use neural network scorer instead of heuristic |
 | `--json` | Output as JSON instead of Rich terminal |
 | `--yara-rules DIR` | Custom YARA rules directory |
 
@@ -553,6 +558,8 @@ python -m fileanalysis.scoring.train --epochs 300 --lr 0.0005
 | Package | Purpose |
 |---------|---------|
 | `torch` | PyTorch — neural network inference and training |
+| `lightgbm` | LightGBM — gradient boosting tree inference and training |
+| `google-genai` | Gemini — AI Executive Insights |
 
 Install with: `pip install fileanalysis[nn]` or `pip install torch>=2.0`
 
