@@ -7,7 +7,6 @@ Fetches malware and benign files from many sources:
     3. InQuest / fabrimagic72 / jstrosch / Ultimate-RAT (GitHub)
     5. Endermanch/MalwareDatabase — bulk recent PE/ELF/doc malware
     6. vx-underground (GitHub) — malware source code & samples
-    7. Das Malwerk (GitHub) — curated malware samples
   Benign:
     1. DikeDataset (GitHub) — labeled benign PE files
     2. System binaries (/usr/bin, /usr/lib, etc.) from Docker container
@@ -74,7 +73,6 @@ import lightgbm as lgb
 DIKE_REPO = "https://github.com/iosifache/DikeDataset.git"
 VXUG_REPO = "https://github.com/vxunderground/MalwareSourceCode.git"
 ZOO_REPO = "https://github.com/ytisf/theZoo.git"
-DAS_MALWERK_REPO = "https://github.com/techbliss/Das-Malwerk.git"
 
 DATASET_ROOT = Path("/app/dataset")
 DIKE_DIR = DATASET_ROOT / "DikeDataset"
@@ -82,7 +80,6 @@ VXUG_DIR = DATASET_ROOT / "vxunderground"
 ENDERMANCH_DIR = DATASET_ROOT / "endermanch"
 SYSTEM_BENIGN_DIR = DATASET_ROOT / "system_benign"
 ZOO_DIR = DATASET_ROOT / "theZoo"
-DAS_MALWERK_DIR = DATASET_ROOT / "das_malwerk"
 
 ENDERMANCH_REPO = "https://github.com/Endermanch/MalwareDatabase.git"
 
@@ -177,7 +174,6 @@ def fetch_github_datasets():
     """Clone GitHub malware datasets."""
     datasets = [
         ("vx-underground", VXUG_REPO, VXUG_DIR),
-        ("Das Malwerk", DAS_MALWERK_REPO, DAS_MALWERK_DIR),
     ]
 
     for name, repo_url, target_dir in datasets:
@@ -200,7 +196,7 @@ def fetch_github_datasets():
     extract_dir.mkdir(parents=True, exist_ok=True)
     
     zips = []
-    for d in [VXUG_DIR, DAS_MALWERK_DIR]:
+    for d in [VXUG_DIR]:
         if d.exists():
             zips.extend(list(d.rglob("*.zip")))
             zips.extend(list(d.rglob("*.7z")))
@@ -423,7 +419,6 @@ def main():
     zoo_malware = collect_files(DATASET_ROOT / "zoo_extracted", MAX_ZOO_FILES)
     github_malware = collect_files(DATASET_ROOT / "github_extracted", MAX_GITHUB_FILES)
     github_malware += collect_files(VXUG_DIR, MAX_GITHUB_FILES)
-    github_malware += collect_files(DAS_MALWERK_DIR, MAX_GITHUB_FILES)
     github_malware = list(set(github_malware))
     all_malware = dike_malware + zoo_malware + github_malware
 
