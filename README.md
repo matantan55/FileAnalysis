@@ -131,7 +131,7 @@ Every scan produces **independent threat scores** and an ensemble score:
 
 ---
 
-## Retraining the Neural Network
+## Retraining the Neural Network (Incremental Learning)
 
 The model can be retrained on real malware inside a **Docker sandbox** (no malware touches your local machine):
 
@@ -145,10 +145,11 @@ docker run --rm -v "$(pwd)":/workspace fileanalysis-sandbox
 
 This will:
 1. Clone multiple curated cybersecurity datasets (DikeDataset, theZoo, vx-underground, Das Malwerk, Endermanch MalwareDatabase) inside the container
-2. Extract 30-dimensional feature vectors from real files
-3. Train ThreatNet (PyTorch) and LightGBM models
-4. Save `threat_model.pt` and `threat_model_lgb.txt` to your local project
-5. Destroy the container (and all malware) when done
+2. **Incremental Extraction**: Skip files already cached in `dataset_cache.npz` and extract 30-dimensional features only from new files
+3. **Replay-Buffer Fine-Tuning**: Load the existing `threat_model_malconv.pt` weights and fine-tune using 100% of new data + a 10% replay buffer of old data to prevent catastrophic forgetting
+4. Train ThreatNet (PyTorch) and LightGBM models
+5. Save `threat_model_malconv.pt`, `threat_model_lgb.txt` and `feature_scaler.npz` to your local project
+6. Destroy the container (and all malware) when done
 
 ---
 
@@ -215,6 +216,6 @@ See [LICENSE](LICENSE) for details.
 
 To ensure the neural network continually stays ahead of zero-day threats, the entire training and release lifecycle is fully automated using **GitHub Actions**:
 
-- **Continuous Model Retraining**: A GitHub Actions workflow (`.github/workflows/daily-training.yml`) automatically triggers the Docker sandbox training pipeline every day at midnight UTC.
-- **GitHub Actions Caching**: The training pipeline uses the `actions/cache` GitHub action to persist and automatically download pre-computed dataset features (`dataset_cache.npz`) between runs. This skips the massive repository cloning and extraction phases, saving substantial compute time. If new data is extracted, the cache is automatically updated at the end of the workflow.
-- **Automated Versioning & Releases**: Upon a successful nightly run, if the model weights (`threat_model.pt`) have improved/changed, the CI/CD pipeline automatically commits the updates back to the `main` branch and publishes a new versioned GitHub Release.
+- **Continuous Model Retraining**: A GitHub Actions workflow (`.github/workflows/training.yml`) automatically triggers the Docker sandbox training pipeline using `workflow_dispatch` or pushes with `--train`.
+- **Incremental Dataset Caching**: The training pipeline uses the `actions/cache` GitHub action to persist and automatically download pre-computed dataset features (`dataset_cache.npz`) between runs. This skips the massive repository cloning and extraction phases for already processed files, extracting features only for newly pushed malware.
+- **Automated Versioning & Releases**: Upon a successful run, if the model weights (`threat_model_malconv.pt`) have improved/changed, the CI/CD pipeline automatically commits the updates back to the `main` branch and publishes a new versioned GitHub Release.
