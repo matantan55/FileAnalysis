@@ -35,7 +35,7 @@ python -m fileanalysis.cli /path/to/suspicious/file.exe
 
 **Example:**
 ```bash
-python -m fileanalysis.cli /usr/bin/zip
+python -m fileanalysis.cli malware.exe
 ```
 
 **Output:**
@@ -43,35 +43,69 @@ python -m fileanalysis.cli /usr/bin/zip
 ╭─────────────────────────────────────────╮
 │ ⚡ FileAnalysis — Malware Threat Report │
 ╰─────────────────────────────────────────╯
-📁 File: zip
-📊 Type: Java bytecode (application/java)
-📏 Size: 396.5 KB (405,984 bytes)
+📁 File: malware.exe
+📊 Type: Windows Executable (application/vnd.microsoft.portable-executable)
+📏 Size: 11.8 MB (12,340,622 bytes)
+🛡️ Perms: rwxr-xr-x
 
 ╭───────────────────────────────────────────────────────────────────╮
-│ 🏆 Best Score (Ensemble): 70.3/100 — HIGH                         │
+│ 🏆 Best Score (Ensemble): 77.1/100 — HIGH                         │
 │                                                                   │
-│ 📊 Heuristic: 34.0/100 — LOW                                      │
+│ 📊 Heuristic: 64.0/100 — HIGH                                     │
 │ 🧠 Neural Net: 100.0/100 — CRITICAL  (100.0% confident malicious) │
-│ 🌲 LightGBM: 50.5/100 — MODERATE  (50.5% confident malicious)     │
+│ 🌲 LightGBM: 78.8/100 — HIGH  (78.8% confident malicious)         │
 ╰───────────────────────────────────────────────────────────────────╯
 
 ╭────────────────── 💡 AI Executive Insights ───────────────────╮
 │ The model classified this file as malicious primarily due to: │
+│ • YARA Signature Hits (Value: 3)                              │
 │ • Embedded URLs (Value: 0)                                    │
 │ • Windows Registry Keys (Value: 1)                            │
-│ • Script File Format (Value: 0)                               │
 │                                                               │
-│ Final ML Score: 50.5/100 (50.5% confidence)                   │
+│ Final ML Score: 78.8/100 (78.8% confidence)                   │
 ╰───────────────────────────────────────────────────────────────╯
 
-🔒 File Hashes
-  MD5:    a2c7a2266a2d82193aa0a4cc3fbae24e
-  SHA-256: 0f01117851dbfb49407e3e06be5d4b9d...
+                                 🔒 File Hashes                                 
+┏━━━━━━━━━━━━━━┳━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━┓
+┃ Type         ┃ Value                                                         ┃
+┡━━━━━━━━━━━━━━╇━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━┩
+│ MD5          │ eb5b7c1d7a58bb6b3356b6933a122b78                              │
+│ SHA-1        │ bcb279c07bb56d554f7aadc12f598dfd36bbde4c                      │
+│ SHA-256      │ 356396e17fb71952c99d0b5d470f4ed9c8cf513a82fc88bb77113842c664… │
+│ ssdeep       │ 196608:E27p7upumuzWnEAkaSqku/ByujxBvWWF4e00bx:FSKy4+kKymxBOW… │
+│ imphash      │ b23a2bc43eb07e7fff1aeded8fe30126                              │
+└──────────────┴───────────────────────────────────────────────────────────────┘
 
-🔥 File Entropy: 5.5282/8.0
+🔥 File Entropy: 6.0108/8.0
 
 🎯 Threat Capabilities
-  • Command & Control (T1071) — ...
+  • Process Injection (T1055) — Injects malicious code into legitimate running processes to bypass detection.
+    ↳ Indicators: Suspicious Section
+  • Persistence (T1547.001) — Establishes mechanism to survive reboot/logoff.
+    ↳ APIs: RegSetValueExW
+    ↳ Indicators: Registry Key References
+  • Defense Evasion (T1027) — Obfuscates binary contents, disables security software, or detects analysis environments.
+    ↳ APIs: IsDebuggerPresent
+
+⚠️ Environment Impact
+  1. The file may actively evade antivirus scanners, virtual environments, or debugger utilities.
+  2. It can inject payloads into other running processes (like explorer.exe) to hijack system actions.
+  3. It establishes persistence (automatic restart) by writing run keys, creating background services, or installing startup jobs.
+
+                                🕵️ YARA Matches                                 
+┏━━━━━━━━━━━━━━━━━━━━━━━━━━━━━┳━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━┳━━━━━━━━━━┓
+┃ Rule Name                   ┃ Description                         ┃ Severity ┃
+┡━━━━━━━━━━━━━━━━━━━━━━━━━━━━━╇━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━╇━━━━━━━━━━┩
+│ Shellcode_API_Hashing_ROR13 │ Detects ROR13 API hashing loop used │ critical │
+│                             │ by Metasploit and Cobalt Strike     │          │
+│                             │ shellcode                           │          │
+│ Shellcode_Syscall_x86       │ Detects direct x86 system call      │ high     │
+│                             │ invocation (int 0x80, sysenter, int │          │
+│                             │ 0x2e)                               │          │
+│ Shellcode_Heavens_Gate      │ Detects Heaven's Gate technique     │ critical │
+│                             │ (32-bit to 64-bit mode switch to    │          │
+│                             │ bypass EDR hooks)                   │          │
+└─────────────────────────────┴─────────────────────────────────────┴──────────┘
 ```
 
 ### 3. CLI Options
