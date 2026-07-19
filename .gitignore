@@ -2,5 +2,5 @@
 .vscode/
 __pycache__/
 *.pyc
-fileanalysis/.DS_Store
+.DS_Store
 fileanalysis/__pycache__/*.pyc
