@@ -1,6 +1,0 @@
-/.venv
-.vscode/
-__pycache__/
-*.pyc
-.DS_Store
-fileanalysis/__pycache__/*.pyc
