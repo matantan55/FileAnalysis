@@ -79,7 +79,9 @@ class AIInsightsGenerator:
             base_score = contributions[-1]
             total_score = np.sum(contributions)
             
-            is_malicious = total_score > 0  # In log-odds, >0 means >50% probability
+            # Use the actual final score (which may have been capped by the Anti-FP filter)
+            final_ml_score = getattr(result, 'ml_score', 50.0)
+            is_malicious = final_ml_score > 40.0
             
             # Find the top 3 features that pushed the score in the final direction
             if is_malicious:
@@ -88,7 +90,7 @@ class AIInsightsGenerator:
                 direction_text = "malicious"
                 filtered_indices = [i for i in top_indices if feature_shap[i] > 0]
             else:
-                # We care about negative contributions
+                # We care about negative contributions (if any exist after clamping)
                 top_indices = np.argsort(feature_shap)[:3]
                 direction_text = "benign"
                 filtered_indices = [i for i in top_indices if feature_shap[i] < 0]

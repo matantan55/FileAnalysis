@@ -372,12 +372,29 @@ Target scores are computed using the **same logic as the heuristic scorer**, plu
 - **Train/val split:** 80/20
 - **Output:** `threat_model.pt` saved alongside `nn_model.py`
 
-### Cloud Training Pipeline (`sandbox_train.py` & `.github/workflows/training.yml`)
+### Anti-False-Positive Enforcement
 
-The model is retrained automatically using a robust CI/CD pipeline:
-- **GitHub Actions Caching**: Features and labels are cached locally in `/workspace/dataset_cache.npz` and persisted across workflow runs using `actions/cache` to skip redundant downloading/extraction.
-- **GitHub Actions**: A cron job triggers the `training.yml` workflow at midnight, spinning up a Docker sandbox and running `sandbox_train.py`.
-- **Automated Releases**: If the model accuracy improves, the workflow automatically commits `threat_model.pt` and `feature_scaler.npz`, and creates a new versioned GitHub Release.
+Machine Learning models trained primarily on executable binaries (PE/ELF) often struggle with out-of-distribution files such as standard PDFs or text scripts, leading to false positives. To ensure robustness, the following safeguards are implemented:
+- **Format-Aware Clamping**: If `ml_model.py` or `nn_model.py` evaluates a non-executable file (e.g., `document` or `script`), and the deterministic Heuristic scanner finds nothing suspicious, the ML confidence is strictly capped at `CLEAN` to prevent hallucinated alerts.
+- **Ensemble Weighting**: The final ensemble score relies heavily on the stable heuristic scanner (40% Heuristic, 40% LightGBM, 20% MalConv), guaranteeing that purely speculative ML predictions cannot trigger `CRITICAL` alerts on otherwise clean files.
+
+### Cloud Training Pipeline & Incremental Learning (`sandbox_train.py` & `.github/workflows/training.yml`)
+
+The model is retrained automatically using a robust CI/CD pipeline. To drastically reduce training time and compute resources, the system utilizes an **Incremental Learning** approach:
+
+1. **Incremental Feature Extraction**: 
+   - The pipeline loads the previously extracted features from `/workspace/dataset_cache.npz`.
+   - It cross-references the cached file paths against the newly downloaded dataset.
+   - The computationally heavy feature extraction (YARA, Hashing, Entropy) runs **only** on the newly discovered files.
+   - The new features are concatenated with the old ones, and the cache is updated.
+
+2. **Incremental Model Training**:
+   - **LightGBM**: Since LightGBM trains extremely rapidly on tabular features, it is fully retrained on the *entire* combined dataset (Old + New) to ensure maximum tree accuracy without performance penalties.
+   - **PyTorch (MalConv)**: Deep Learning on raw bytes is the primary bottleneck. The script loads the existing `threat_model_malconv.pt` weights and **fine-tunes** the model using only the new data (alongside a small 10% replay buffer of old data to prevent catastrophic forgetting).
+   - If no new data is found during the pipeline run, the script exits early to save CI minutes.
+
+- **GitHub Actions**: A cron job triggers the `training.yml` workflow at midnight, spinning up a Docker sandbox, restoring the `dataset_cache.npz` via `actions/cache`, and executing `sandbox_train.py`.
+- **Automated Releases**: If the model accuracy improves or new data was incorporated, the workflow automatically commits `threat_model.pt` and `feature_scaler.npz`, and creates a new versioned GitHub Release.
 
 ### Retraining on Real Data
 

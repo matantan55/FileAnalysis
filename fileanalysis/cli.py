@@ -138,14 +138,28 @@ def cli(file_path: str, json_format: bool, yara_rules: str | None) -> None:
                 
         # 7.6 Calculate Ensemble Score
         if result.scoring_method == "triple":
-            # Weighted ensemble: 60% LightGBM (tabular), 40% MalConv (raw bytes)
-            result.ensemble_score = round(0.6 * result.ml_score + 0.4 * getattr(result, 'nn_score', result.risk_score), 1)
+            # Smart weighted ensemble: 40% Heuristic, 40% LightGBM, 20% MalConv
+            base_score = 0.4 * result.risk_score + 0.4 * result.ml_score + 0.2 * getattr(result, 'nn_score', result.risk_score)
         elif result.scoring_method == "dual":
-            result.ensemble_score = getattr(result, 'nn_score', result.risk_score)
+            base_score = 0.6 * result.risk_score + 0.4 * getattr(result, 'nn_score', result.risk_score)
         elif result.scoring_method == "dual_ml":
-            result.ensemble_score = getattr(result, 'ml_score', result.risk_score)
+            base_score = 0.6 * result.risk_score + 0.4 * getattr(result, 'ml_score', result.risk_score)
         else:
-            result.ensemble_score = result.risk_score
+            base_score = result.risk_score
+            
+        # Anti-False-Positive Filter
+        # Our ML models were primarily trained on PE/ELF binaries.
+        # They are prone to wildly overfitting on innocent PDFs, text files, and empty files.
+        if result.metadata.file_type not in ["pe", "elf", "macho"]:
+            # For documents/scripts/generic files, heavily trust the heuristic
+            if result.risk_score < 20.0:
+                base_score = min(base_score, 20.0)  # Cap at CLEAN
+        else:
+            # For executables, if heuristic found absolutely zero suspicious capabilities or strings
+            if result.risk_score < 10.0:
+                base_score = min(base_score, 40.0)  # Cap at LOW
+
+        result.ensemble_score = round(base_score, 1)
             
         # Determine ensemble risk level
         if result.ensemble_score <= 20.0:

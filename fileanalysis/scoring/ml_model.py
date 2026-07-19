@@ -72,8 +72,18 @@ class LightGBMThreatScorer:
 
         # Convert output [0, 1] → score [0, 100]
         confidence = float(raw_output)
+        
+        # Anti-False-Positive Filter for LightGBM:
+        # LightGBM correlates high entropy with malware, causing false positives on PDFs/archives.
+        heuristic_conf = getattr(result, 'risk_score', 0.0) / 100.0
+        if result.metadata.file_type not in ["pe", "elf", "macho"]:
+            # Hardcap out-of-distribution files based on heuristic reality
+            confidence = min(confidence, max(0.2, heuristic_conf))
+        elif heuristic_conf < 0.1:
+            # If executable but completely devoid of any suspicious traits, cap at LOW risk
+            confidence = min(confidence, 0.4)
+
         final_score = round(confidence * 100.0, 1)
-        final_score = max(0.0, min(100.0, final_score))
 
         result.ml_score = final_score
         result.ml_confidence = round(confidence, 4)

@@ -388,105 +388,101 @@ def main():
     console.rule("[bold cyan]⚡ ThreatNet Multi-Dataset Training[/]")
 
     cache_file = "dataset_cache.npz"
-    # Save cache to the mounted workspace so it persists outside the container
-    # and can be cached by GitHub Actions
     local_cache_path = Path("/workspace") / cache_file
 
-    X, y, paths = [], [], []
+    old_X, old_y, old_paths = [], [], []
     used_cache = False
 
     if local_cache_path.exists():
-        console.print(f"[bold cyan]📦 Checking local disk for cached dataset…[/]")
+        console.print("[bold cyan]📦 Checking local disk for cached dataset…[/]")
         try:
             data = np.load(local_cache_path, allow_pickle=True)
-            X = data['X']
-            y = data['y']
-            paths = data['paths'] if 'paths' in data else np.array(["unknown"] * len(X))
+            # Convert to list to allow appending
+            old_X = list(data['X'])
+            old_y = list(data['y'])
+            old_paths = list(data['paths'] if 'paths' in data else np.array(["unknown"] * len(old_X)))
             used_cache = True
-            console.print(f"[bold green]✓ Loaded {len(X)} feature vectors from cache. Skipping extraction![/]")
+            console.print(f"[bold green]✓ Loaded {len(old_X)} feature vectors from cache.[/]")
         except Exception as e:
             console.print(f"[yellow]⚠ Failed to load cache: {e}. Will extract from scratch.[/]")
 
-    if not used_cache:
-        # 1. Fetch all datasets
-        clone_dike()
-        clone_zoo()
-        fetch_github_datasets()
-        collect_system_benign()
+    # 1. Fetch all datasets (pulls latest from repos)
+    clone_dike()
+    clone_zoo()
+    fetch_github_datasets()
+    collect_system_benign()
 
-        # 2. Collect file paths
-        console.rule("[bold]Collecting files")
+    # 2. Collect file paths
+    console.rule("[bold]Collecting files")
 
-        # Benign files from multiple sources
-        dike_benign = list((DIKE_DIR / "files" / "benign").glob("*"))[:MAX_DIKE_PER_CLASS]
-        system_benign = collect_files(SYSTEM_BENIGN_DIR, 5000)
-        all_benign = dike_benign + system_benign
+    dike_benign = list((DIKE_DIR / "files" / "benign").glob("*"))[:MAX_DIKE_PER_CLASS]
+    system_benign = collect_files(SYSTEM_BENIGN_DIR, 5000)
+    all_benign = dike_benign + system_benign
 
-        # Malware files from all sources
-        dike_malware = list((DIKE_DIR / "files" / "malware").glob("*"))[:MAX_DIKE_PER_CLASS]
-        zoo_malware = collect_files(DATASET_ROOT / "zoo_extracted", MAX_ZOO_FILES)
-        github_malware = collect_files(DATASET_ROOT / "github_extracted", MAX_GITHUB_FILES)
-        github_malware += collect_files(VXUG_DIR, MAX_GITHUB_FILES)
-        github_malware += collect_files(DAS_MALWERK_DIR, MAX_GITHUB_FILES)
-        
-        # Dedup
-        github_malware = list(set(github_malware))
+    dike_malware = list((DIKE_DIR / "files" / "malware").glob("*"))[:MAX_DIKE_PER_CLASS]
+    zoo_malware = collect_files(DATASET_ROOT / "zoo_extracted", MAX_ZOO_FILES)
+    github_malware = collect_files(DATASET_ROOT / "github_extracted", MAX_GITHUB_FILES)
+    github_malware += collect_files(VXUG_DIR, MAX_GITHUB_FILES)
+    github_malware += collect_files(DAS_MALWERK_DIR, MAX_GITHUB_FILES)
+    github_malware = list(set(github_malware))
+    all_malware = dike_malware + zoo_malware + github_malware
 
-        all_malware = dike_malware + zoo_malware + github_malware
+    # Filter out files already in cache
+    old_paths_set = set(old_paths)
+    new_benign = [p for p in all_benign if str(p) not in old_paths_set]
+    new_malware = [p for p in all_malware if str(p) not in old_paths_set]
 
-        console.print(f"  Benign:  [green]{len(dike_benign)}[/] (DikeDataset) + "
-                      f"[green]{len(system_benign)}[/] (System) = "
-                      f"[bold green]{len(all_benign)}[/] total")
-        console.print(f"  Malware: [red]{len(dike_malware)}[/] (DikeDataset) + "
-                      f"[red]{len(zoo_malware)}[/] (theZoo) + "
-                      f"[red]{len(github_malware)}[/] (GitHub+vxug+DasMalwerk) = "
-                      f"[bold red]{len(all_malware)}[/] total")
+    console.print(f"  Total Benign:  {len(all_benign)} | [cyan]New: {len(new_benign)}[/]")
+    console.print(f"  Total Malware: {len(all_malware)} | [cyan]New: {len(new_malware)}[/]")
 
-        # 3. Extract features
-        console.rule("[bold]Extracting features")
+    new_X, new_y, new_paths = [], [], []
 
+    if new_benign or new_malware:
+        console.rule("[bold]Extracting features for NEW files")
         with Progress(
-            SpinnerColumn(),
-            TextColumn("[bold]{task.description}"),
-            MofNCompleteColumn(),
-            BarColumn(),
-            TextColumn("[progress.percentage]{task.percentage:>3.0f}%"),
-            TextColumn("ETA:"),
-            TimeRemainingColumn(),
-            TextColumn("Elapsed:"),
-            TimeElapsedColumn(),
+            SpinnerColumn(), TextColumn("[bold]{task.description}"), MofNCompleteColumn(),
+            BarColumn(), TextColumn("[progress.percentage]{task.percentage:>3.0f}%"),
+            TextColumn("ETA:"), TimeRemainingColumn(), TextColumn("Elapsed:"), TimeElapsedColumn(),
         ) as progress:
-            task_b = progress.add_task("[green]Benign files…", total=len(all_benign))
-            f, lbls, pths = extract_features(all_benign, 0.0, progress, task_b)
-            X.extend(f)
-            y.extend(lbls)
-            paths.extend(pths)
+            if new_benign:
+                task_b = progress.add_task("[green]New Benign…", total=len(new_benign))
+                f, lbls, pths = extract_features(new_benign, 0.0, progress, task_b)
+                new_X.extend(f)
+                new_y.extend(lbls)
+                new_paths.extend(pths)
 
-            task_m = progress.add_task("[red]Malware files…", total=len(all_malware))
-            f, lbls, pths = extract_features(all_malware, 1.0, progress, task_m)
-            X.extend(f)
-            y.extend(lbls)
-            paths.extend(pths)
+            if new_malware:
+                task_m = progress.add_task("[red]New Malware…", total=len(new_malware))
+                f, lbls, pths = extract_features(new_malware, 1.0, progress, task_m)
+                new_X.extend(f)
+                new_y.extend(lbls)
+                new_paths.extend(pths)
 
-        if len(X) < 10:
-            console.print("[bold red]Too few feature vectors extracted. Exiting.[/]")
-            exit(1)
+        console.print(f"[bold green]✓ Extracted {len(new_X)} NEW feature vectors.[/]")
 
-        X = np.array(X, dtype=np.float32)
-        y = np.array(y, dtype=np.float32)
-        paths = np.array(paths, dtype=str)
+    # Combine old and new
+    X_list = old_X + new_X
+    y_list = old_y + new_y
+    paths_list = old_paths + new_paths
 
-        console.print(f"[bold green]✓ Extracted {len(X)} feature vectors "
-                      f"({int(np.sum(y == 0))} benign, {int(np.sum(y == 1))} malware)[/]")
+    if len(X_list) < 10:
+        console.print("[bold red]Too few feature vectors available. Exiting.[/]")
+        exit(1)
 
-        # Save cache locally
-        console.print(f"[bold cyan]📦 Saving extracted dataset locally…[/]")
+    X = np.array(X_list, dtype=np.float32)
+    y = np.array(y_list, dtype=np.float32)
+    paths = np.array(paths_list, dtype=str)
+
+    if len(new_X) > 0:
+        console.print("[bold cyan]📦 Saving updated dataset cache locally…[/]")
         try:
             local_cache_path.parent.mkdir(parents=True, exist_ok=True)
             np.savez(local_cache_path, X=X, y=y, paths=paths)
-            console.print("[bold green]✓ Saved dataset cache locally![/]")
+            console.print("[bold green]✓ Saved updated dataset cache locally![/]")
         except Exception as e:
             console.print(f"[bold red]Failed to save cache locally: {e}[/]")
+    else:
+        console.print("[green]No new files extracted. Cache remains unchanged.[/]")
 
     # 4. Normalize features (StandardScaler)
     feat_mean = X.mean(axis=0)
@@ -546,61 +542,100 @@ def main():
     import torch
     torch.set_num_threads(2) # Prevent CPU thread explosion segfault in Docker
     model = MalConv()
-    optimizer = torch.optim.Adam(model.parameters(), lr=0.001, weight_decay=1e-4)
-    criterion = nn.BCELoss()
-    scheduler = torch.optim.lr_scheduler.CosineAnnealingLR(optimizer, T_max=20) # shorter epochs
+    
+    # Check if we should fine-tune
+    fine_tuning = False
+    if WORKSPACE_MODEL_PATH.exists() and len(new_paths) > 0:
+        try:
+            state_dict = torch.load(WORKSPACE_MODEL_PATH, map_location="cpu", weights_only=True)
+            model.load_state_dict(state_dict)
+            fine_tuning = True
+            console.print("[bold green]✓ Loaded existing MalConv weights for Fine-Tuning![/]")
+        except Exception as e:
+            console.print(f"[yellow]⚠ Failed to load existing weights: {e}[/]")
 
-    train_ds = RawByteDataset(paths_train, y_train)
+    optimizer = torch.optim.Adam(model.parameters(), lr=0.001 if not fine_tuning else 0.0001, weight_decay=1e-4)
+    criterion = nn.BCELoss()
+    scheduler = torch.optim.lr_scheduler.CosineAnnealingLR(optimizer, T_max=20)
+
+    # If fine-tuning, restrict the PyTorch training set to ONLY new files + 10% old replay buffer
+    if fine_tuning:
+        console.print("[bold]Building incremental dataset (100% New + 10% Old Replay Buffer)...[/]")
+        new_paths_set = set(new_paths)
+        
+        new_train_idx = [i for i, p in enumerate(paths_train) if p in new_paths_set]
+        old_train_idx = [i for i, p in enumerate(paths_train) if p not in new_paths_set]
+        
+        # Select 10% of old data randomly
+        if len(old_train_idx) > 0:
+            replay_count = max(1, int(len(old_train_idx) * 0.1))
+            replay_idx = np.random.choice(old_train_idx, replay_count, replace=False).tolist()
+        else:
+            replay_idx = []
+            
+        incremental_train_idx = np.array(new_train_idx + replay_idx, dtype=int)
+        np.random.shuffle(incremental_train_idx)
+        
+        mc_paths_train = paths_train[incremental_train_idx]
+        mc_y_train = y_train[incremental_train_idx]
+        epochs = 3 # Fast fine-tuning
+    else:
+        mc_paths_train = paths_train
+        mc_y_train = y_train
+        epochs = 5 # Full train
+        
+    train_ds = RawByteDataset(mc_paths_train, mc_y_train)
     val_ds = RawByteDataset(paths_val, y_val)
     train_loader = DataLoader(train_ds, batch_size=16, shuffle=True)
     val_loader = DataLoader(val_ds, batch_size=16, shuffle=False)
 
-    epochs = 5 # Reduced epochs to finish within GitHub Actions limits
     best_val_acc = 0.0
     best_state = None
-    console.rule(f"[bold cyan]Training for {epochs} epochs")
-
-    for epoch in range(epochs):
-        model.train()
-        total_loss = 0
-        for batch_idx, (batch_X, batch_y) in enumerate(train_loader):
-            optimizer.zero_grad()
-            out = model(batch_X)
-            loss = criterion(out, batch_y)
-            loss.backward()
-            optimizer.step()
-            total_loss += loss.item()
-            
-            # Print progress every 100 batches to keep logs readable
-            if (batch_idx + 1) % 100 == 0:
-                print(f"  [Epoch {epoch+1}] Batch {batch_idx+1}/{len(train_loader)} - Loss: {loss.item():.4f}", flush=True)
-
-        avg_loss = total_loss / len(train_loader)
-        scheduler.step()
-
-        # Validation accuracy
-        model.eval()
-        val_correct = 0
-        val_total = 0
-        with torch.no_grad():
-            for v_batch_X, v_batch_y in val_loader:
-                v_out = model(v_batch_X)
-                v_preds = (v_out >= 0.5).float()
-                val_correct += (v_preds == v_batch_y).float().sum().item()
-                val_total += len(v_batch_y)
+    
+    if len(train_loader) > 0:
+        console.rule(f"[bold cyan]{'Fine-Tuning' if fine_tuning else 'Training'} for {epochs} epochs")
+        for epoch in range(epochs):
+            model.train()
+            total_loss = 0
+            for batch_idx, (batch_X, batch_y) in enumerate(train_loader):
+                optimizer.zero_grad()
+                out = model(batch_X)
+                loss = criterion(out, batch_y)
+                loss.backward()
+                optimizer.step()
+                total_loss += loss.item()
                 
-        val_acc = (val_correct / max(val_total, 1)) * 100
+                if (batch_idx + 1) % 100 == 0:
+                    print(f"  [Epoch {epoch+1}] Batch {batch_idx+1}/{len(train_loader)} - Loss: {loss.item():.4f}", flush=True)
 
-        if val_acc > best_val_acc:
-            best_val_acc = val_acc
-            best_state = {k: v.clone() for k, v in model.state_dict().items()}
+            avg_loss = total_loss / len(train_loader)
+            scheduler.step()
 
-        lr = optimizer.param_groups[0]["lr"]
-        print(f"[*] Epoch {epoch+1}/{epochs} Completed | Avg Loss: {avg_loss:.4f} | Val Acc: {val_acc:.1f}% | LR: {lr:.6f}", flush=True)
+            # Validation accuracy
+            model.eval()
+            val_correct = 0
+            val_total = 0
+            with torch.no_grad():
+                for v_batch_X, v_batch_y in val_loader:
+                    v_out = model(v_batch_X)
+                    v_preds = (v_out >= 0.5).float()
+                    val_correct += (v_preds == v_batch_y).float().sum().item()
+                    val_total += len(v_batch_y)
+                    
+            val_acc = (val_correct / max(val_total, 1)) * 100
 
-    # Load best model
-    if best_state:
-        model.load_state_dict(best_state)
+            if val_acc > best_val_acc:
+                best_val_acc = val_acc
+                best_state = {k: v.clone() for k, v in model.state_dict().items()}
+
+            lr = optimizer.param_groups[0]["lr"]
+            print(f"[*] Epoch {epoch+1}/{epochs} Completed | Avg Loss: {avg_loss:.4f} | Val Acc: {val_acc:.1f}% | LR: {lr:.6f}", flush=True)
+
+        # Load best model
+        if best_state:
+            model.load_state_dict(best_state)
+    else:
+        console.print("[yellow]⚠ No data for PyTorch training loop.[/]")
 
     # 7. Final evaluation
     console.rule("[bold]Final Evaluation")
