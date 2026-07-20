@@ -1,4 +1,4 @@
-# ⚡ FileAnalysis — Malware Threat Analysis Tool
+#  FileAnalysis — Malware Threat Analysis Tool
 
 A CLI-based malware file analysis and threat assessment tool that combines heuristic rules with a neural network trained on real malware samples.
 
@@ -40,45 +40,45 @@ python -m fileanalysis.cli malware.exe
 
 **Output:**
 ```
-╭─────────────────────────────────────────╮
-│ ⚡ FileAnalysis — Malware Threat Report │
-╰─────────────────────────────────────────╯
-📁 File: malware.exe
-📊 Type: Windows Executable (application/vnd.microsoft.portable-executable)
-📏 Size: 11.8 MB (12,340,622 bytes)
-🛡️ Perms: rwxr-xr-x
 
-╭───────────────────────────────────────────────────────────────────╮
-│ 🏆 Best Score (Ensemble): 77.1/100 — HIGH                         │
-│                                                                   │
-│ 📊 Heuristic: 64.0/100 — HIGH                                     │
-│ 🧠 Neural Net: 100.0/100 — CRITICAL  (100.0% confident malicious) │
-│ 🌲 LightGBM: 78.8/100 — HIGH  (78.8% confident malicious)         │
-╰───────────────────────────────────────────────────────────────────╯
+  FileAnalysis — Malware Threat Report 
 
-╭────────────────── 💡 AI Executive Insights ───────────────────╮
-│ The model classified this file as malicious primarily due to: │
-│ • YARA Signature Hits (Value: 3)                              │
-│ • Embedded URLs (Value: 0)                                    │
-│ • Windows Registry Keys (Value: 1)                            │
-│                                                               │
-│ Final ML Score: 78.8/100 (78.8% confidence)                   │
-╰───────────────────────────────────────────────────────────────╯
+ File: malware.exe
+ Type: Windows Executable (application/vnd.microsoft.portable-executable)
+ Size: 11.8 MB (12,340,622 bytes)
+ Perms: rwxr-xr-x
 
-                                 🔒 File Hashes                                 
-┏━━━━━━━━━━━━━━┳━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━┓
-┃ Type         ┃ Value                                                         ┃
-┡━━━━━━━━━━━━━━╇━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━┩
-│ MD5          │ eb5b7c1d7a58bb6b3356b6933a122b78                              │
-│ SHA-1        │ bcb279c07bb56d554f7aadc12f598dfd36bbde4c                      │
-│ SHA-256      │ 356396e17fb71952c99d0b5d470f4ed9c8cf513a82fc88bb77113842c664… │
-│ ssdeep       │ 196608:E27p7upumuzWnEAkaSqku/ByujxBvWWF4e00bx:FSKy4+kKymxBOW… │
-│ imphash      │ b23a2bc43eb07e7fff1aeded8fe30126                              │
-└──────────────┴───────────────────────────────────────────────────────────────┘
 
-🔥 File Entropy: 6.0108/8.0
+  Best Score (Ensemble): 77.1/100 — HIGH                         
+                                                                   
+  Heuristic: 64.0/100 — HIGH                                     
+  Neural Net: 100.0/100 — CRITICAL  (100.0% confident malicious) 
+  LightGBM: 78.8/100 — HIGH  (78.8% confident malicious)         
 
-🎯 Threat Capabilities
+
+  AI Executive Insights 
+ The model classified this file as malicious primarily due to: 
+ • YARA Signature Hits (Value: 3)                              
+ • Embedded URLs (Value: 0)                                    
+ • Windows Registry Keys (Value: 1)                            
+                                                               
+ Final ML Score: 78.8/100 (78.8% confidence)                   
+
+
+                                  File Hashes                                 
+
+ Type          Value                                                         
+
+ MD5           eb5b7c1d7a58bb6b3356b6933a122b78                              
+ SHA-1         bcb279c07bb56d554f7aadc12f598dfd36bbde4c                      
+ SHA-256       356396e17fb71952c99d0b5d470f4ed9c8cf513a82fc88bb77113842c664… 
+ ssdeep        196608:E27p7upumuzWnEAkaSqku/ByujxBvWWF4e00bx:FSKy4+kKymxBOW… 
+ imphash       b23a2bc43eb07e7fff1aeded8fe30126                              
+
+
+ File Entropy: 6.0108/8.0
+
+ Threat Capabilities
   • Process Injection (T1055) — Injects malicious code into legitimate running processes to bypass detection.
     ↳ Indicators: Suspicious Section
   • Persistence (T1547.001) — Establishes mechanism to survive reboot/logoff.
@@ -87,25 +87,25 @@ python -m fileanalysis.cli malware.exe
   • Defense Evasion (T1027) — Obfuscates binary contents, disables security software, or detects analysis environments.
     ↳ APIs: IsDebuggerPresent
 
-⚠️ Environment Impact
+ Environment Impact
   1. The file may actively evade antivirus scanners, virtual environments, or debugger utilities.
   2. It can inject payloads into other running processes (like explorer.exe) to hijack system actions.
   3. It establishes persistence (automatic restart) by writing run keys, creating background services, or installing startup jobs.
 
-                                🕵️ YARA Matches                                 
-┏━━━━━━━━━━━━━━━━━━━━━━━━━━━━━┳━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━┳━━━━━━━━━━┓
-┃ Rule Name                   ┃ Description                         ┃ Severity ┃
-┡━━━━━━━━━━━━━━━━━━━━━━━━━━━━━╇━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━╇━━━━━━━━━━┩
-│ Shellcode_API_Hashing_ROR13 │ Detects ROR13 API hashing loop used │ critical │
-│                             │ by Metasploit and Cobalt Strike     │          │
-│                             │ shellcode                           │          │
-│ Shellcode_Syscall_x86       │ Detects direct x86 system call      │ high     │
-│                             │ invocation (int 0x80, sysenter, int │          │
-│                             │ 0x2e)                               │          │
-│ Shellcode_Heavens_Gate      │ Detects Heaven's Gate technique     │ critical │
-│                             │ (32-bit to 64-bit mode switch to    │          │
-│                             │ bypass EDR hooks)                   │          │
-└─────────────────────────────┴─────────────────────────────────────┴──────────┘
+                                 YARA Matches                                 
+
+ Rule Name                    Description                          Severity 
+
+ Shellcode_API_Hashing_ROR13  Detects ROR13 API hashing loop used  critical 
+                              by Metasploit and Cobalt Strike               
+                              shellcode                                     
+ Shellcode_Syscall_x86        Detects direct x86 system call       high     
+                              invocation (int 0x80, sysenter, int           
+                              0x2e)                                         
+ Shellcode_Heavens_Gate       Detects Heaven's Gate technique      critical 
+                              (32-bit to 64-bit mode switch to              
+                              bypass EDR hooks)                             
+
 ```
 
 ### 3. CLI Options
@@ -148,10 +148,10 @@ Every scan produces **independent threat scores** and an ensemble score:
 
 | Scorer | How it works |
 |--------|-------------|
-| **📊 Heuristic** | Hand-tuned weighted formula (entropy + strings + capabilities + YARA) |
-| **🧠 Neural Net** | 4-layer MLP trained on real malware/benign samples |
-| **🌲 LightGBM** | Gradient boosting decision tree trained on the same feature set |
-| **💡 AI Insights** | Google Gemini LLM generates an executive summary of the primary threat vectors |
+| ** Heuristic** | Hand-tuned weighted formula (entropy + strings + capabilities + YARA) |
+| ** Neural Net** | 4-layer MLP trained on real malware/benign samples |
+| ** LightGBM** | Gradient boosting decision tree trained on the same feature set |
+| ** AI Insights** | Google Gemini LLM generates an executive summary of the primary threat vectors |
 
 ### Risk Levels
 
@@ -160,8 +160,8 @@ Every scan produces **independent threat scores** and an ensemble score:
 | 0–20 | 🟢 CLEAN | No indicators found |
 | 21–40 | 🟡 LOW | Minor suspicious indicators |
 | 41–60 | 🟠 MODERATE | Multiple suspicious indicators |
-| 61–80 | 🔴 HIGH | Strong malware indicators |
-| 81–100 | ⛔ CRITICAL | Almost certainly malicious |
+| 61–80 |  HIGH | Strong malware indicators |
+| 81–100 |  CRITICAL | Almost certainly malicious |
 
 ---
 
@@ -191,37 +191,37 @@ This will:
 
 ```
 FileAnalysis/
-├── fileanalysis/
-│   ├── cli.py                    # Main CLI entry point
-│   ├── loader.py                 # File loading & type detection
-│   ├── analyzers/                # Format-specific analyzers
-│   │   ├── base.py               # AnalysisResult data structure
-│   │   ├── entropy.py            # Entropy analysis
-│   │   ├── hashing.py            # Cryptographic hashing
-│   │   ├── strings.py            # String extraction & categorization
-│   │   ├── pe_analyzer.py        # Windows PE analysis
-│   │   ├── elf_analyzer.py       # Linux ELF analysis
-│   │   ├── macho_analyzer.py     # macOS Mach-O analysis
-│   │   ├── script_analyzer.py    # Script file analysis
-│   │   ├── document_analyzer.py  # Document file analysis
-│   │   └── dll_analyzer.py       # DLL-specific analysis
-│   ├── intelligence/
-│   │   ├── yara_scanner.py       # YARA rule matching
-│   │   └── capability_mapper.py  # MITRE ATT&CK mapping
-│   ├── scoring/
-│   │   ├── scorer.py             # Heuristic threat scorer
-│   │   ├── nn_model.py           # ThreatNet neural network
-│   │   ├── ml_model.py           # LightGBM tree model
-│   │   ├── features.py           # 30-dim feature extraction
-│   │   ├── sandbox_train.py      # Real malware training (Docker)
-│   │   ├── threat_model.pt       # Trained NN weights
-│   │   └── threat_model_lgb.txt  # Trained LightGBM weights
-│   └── reporting/
-│       ├── terminal_report.py    # Rich terminal output
-│       └── json_report.py        # JSON output
-├── Dockerfile.sandbox            # Docker sandbox for safe training
-├── requirements.txt              # Python dependencies
-└── pyproject.toml                # Project configuration
+ fileanalysis/
+    cli.py                    # Main CLI entry point
+    loader.py                 # File loading & type detection
+    analyzers/                # Format-specific analyzers
+       base.py               # AnalysisResult data structure
+       entropy.py            # Entropy analysis
+       hashing.py            # Cryptographic hashing
+       strings.py            # String extraction & categorization
+       pe_analyzer.py        # Windows PE analysis
+       elf_analyzer.py       # Linux ELF analysis
+       macho_analyzer.py     # macOS Mach-O analysis
+       script_analyzer.py    # Script file analysis
+       document_analyzer.py  # Document file analysis
+       dll_analyzer.py       # DLL-specific analysis
+    intelligence/
+       yara_scanner.py       # YARA rule matching
+       capability_mapper.py  # MITRE ATT&CK mapping
+    scoring/
+       scorer.py             # Heuristic threat scorer
+       nn_model.py           # ThreatNet neural network
+       ml_model.py           # LightGBM tree model
+       features.py           # 30-dim feature extraction
+       sandbox_train.py      # Real malware training (Docker)
+       threat_model.pt       # Trained NN weights
+       threat_model_lgb.txt  # Trained LightGBM weights
+    reporting/
+        terminal_report.py    # Rich terminal output
+        json_report.py        # JSON output
+ Dockerfile.sandbox            # Docker sandbox for safe training
+ requirements.txt              # Python dependencies
+ pyproject.toml                # Project configuration
 ```
 
 ---

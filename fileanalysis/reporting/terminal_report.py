@@ -21,23 +21,23 @@ class TerminalReporter:
 
         # Header Panel
         self.console.print()
-        header_text = Text("⚡ FileAnalysis — Malware Threat Report", style="bold cyan")
+        header_text = Text(" FileAnalysis — Malware Threat Report", style="bold cyan")
         self.console.print(Panel(header_text, border_style="cyan", expand=False))
 
         # Basic Metadata
         m = result.metadata
-        self.console.print(f"[bold]📁 File:[/] {m.name}")
-        self.console.print(f"[bold]📊 Type:[/] {m.magic_description}")
-        self.console.print(f"[bold]📏 Size:[/] {m.size_human} ({m.size:,} bytes)")
-        self.console.print(f"[bold]🛡️ Perms:[/] {m.permissions}")
+        self.console.print(f"[bold] File:[/] {m.name}")
+        self.console.print(f"[bold] Type:[/] {m.magic_description}")
+        self.console.print(f"[bold] Size:[/] {m.size_human} ({m.size:,} bytes)")
+        self.console.print(f"[bold] Perms:[/] {m.permissions}")
         self.console.print()
 
         # Risk Score Panel — show both heuristic and NN scores
         e_color = self._get_risk_color(result.ensemble_risk_level)
-        badge = f"[bold {e_color}]🏆 Best Score (Ensemble): {result.ensemble_score}/100 — {result.ensemble_risk_level.value.upper()}[/]\n\n"
+        badge = f"[bold {e_color}] Best Score (Ensemble): {result.ensemble_score}/100 — {result.ensemble_risk_level.value.upper()}[/]\n\n"
         
         h_color = self._get_risk_color(result.risk_level)
-        badge += f"[bold {h_color}]📊 Heuristic: {result.risk_score}/100 — {result.risk_level.value.upper()}[/]"
+        badge += f"[bold {h_color}] Heuristic: {result.risk_score}/100 — {result.risk_level.value.upper()}[/]"
 
         if result.scoring_method in ["dual", "triple"]:
             nn_color = self._get_risk_color(result.nn_risk_level)
@@ -48,7 +48,7 @@ class TerminalReporter:
             else:
                 conf_pct = result.nn_confidence * 100
                 conf_label = "malicious"
-            badge += f"\n[bold {nn_color}]🧠 Neural Net: {result.nn_score}/100 — {result.nn_risk_level.value.upper()}[/]"
+            badge += f"\n[bold {nn_color}] Neural Net: {result.nn_score}/100 — {result.nn_risk_level.value.upper()}[/]"
             badge += f"  [dim]({conf_pct:.1f}% confident {conf_label})[/]"
 
         if result.scoring_method in ["dual_ml", "triple"]:
@@ -59,7 +59,7 @@ class TerminalReporter:
             else:
                 ml_conf_pct = result.ml_confidence * 100
                 ml_conf_label = "malicious"
-            badge += f"\n[bold {ml_color}]🌲 LightGBM: {result.ml_score}/100 — {result.ml_risk_level.value.upper()}[/]"
+            badge += f"\n[bold {ml_color}] LightGBM: {result.ml_score}/100 — {result.ml_risk_level.value.upper()}[/]"
             badge += f"  [dim]({ml_conf_pct:.1f}% confident {ml_conf_label})[/]"
 
         self.console.print(Panel(badge, border_style=h_color, expand=False))
@@ -68,11 +68,11 @@ class TerminalReporter:
         # AI Insights Panel
         if result.ai_summary:
             ai_text = Text(result.ai_summary, style="italic")
-            self.console.print(Panel(ai_text, title="💡 AI Executive Insights", border_style="magenta", expand=False))
+            self.console.print(Panel(ai_text, title=" AI Executive Insights", border_style="magenta", expand=False))
             self.console.print()
 
         # Hashes Table
-        hash_table = Table(title="🔒 File Hashes", show_header=True, header_style="bold green")
+        hash_table = Table(title=" File Hashes", show_header=True, header_style="bold green")
         hash_table.add_column("Type", style="dim", width=12)
         hash_table.add_column("Value", style="cyan")
         hash_table.add_row("MD5", result.hashes.md5)
@@ -86,14 +86,14 @@ class TerminalReporter:
         self.console.print()
 
         # Entropy Section
-        self.console.print(f"[bold]🔥 File Entropy:[/] {result.entropy.overall}/8.0")
+        self.console.print(f"[bold] File Entropy:[/] {result.entropy.overall}/8.0")
         if result.entropy.is_packed:
-            self.console.print("[bold red]⚠️ File is highly likely packed or encrypted.[/]")
+            self.console.print("[bold red] File is highly likely packed or encrypted.[/]")
         self.console.print()
 
         # Capabilities (MITRE Mapping)
         if result.capabilities:
-            self.console.print("[bold underline yellow]🎯 Threat Capabilities[/]")
+            self.console.print("[bold underline yellow] Threat Capabilities[/]")
             for cap in result.capabilities:
                 self.console.print(f"  • [bold red]{cap.name}[/] ({cap.technique_id}) — {cap.description}")
                 for ev in cap.evidence:
@@ -101,14 +101,14 @@ class TerminalReporter:
             self.console.print()
 
         # Environmental Impact
-        self.console.print("[bold underline yellow]⚠️ Environment Impact[/]")
+        self.console.print("[bold underline yellow] Environment Impact[/]")
         for i, impact in enumerate(result.environment_impact, 1):
             self.console.print(f"  {i}. {impact}")
         self.console.print()
 
         # Yara Matches
         if result.yara_matches:
-            yara_table = Table(title="🕵️ YARA Matches", show_header=True, header_style="bold red")
+            yara_table = Table(title=" YARA Matches", show_header=True, header_style="bold red")
             yara_table.add_column("Rule Name", style="bold red")
             yara_table.add_column("Description", style="dim")
             yara_table.add_column("Severity", style="yellow")
@@ -120,7 +120,7 @@ class TerminalReporter:
 
         # Errors list
         if result.errors:
-            self.console.print("[bold red]❌ Processing Errors[/]")
+            self.console.print("[bold red] Processing Errors[/]")
             for err in result.errors:
                 self.console.print(f"  • {err}")
             self.console.print()

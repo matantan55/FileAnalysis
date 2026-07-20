@@ -31,7 +31,7 @@ python -m fileanalysis.cli ~/Downloads/suspicious.exe
 
 ### Common mistakes
 
-| ❌ Wrong | ✅ Right |
+|  Wrong |  Right |
 |---------|---------|
 | Running from `~/` or any other directory | `cd` into `FileAnalysis/` first |
 | `python -m fileanalysis.cli` (without venv) | `source .venv/bin/activate` first |

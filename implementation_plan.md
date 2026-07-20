@@ -36,39 +36,39 @@ It supports PE (EXE/DLL), ELF, Mach-O, scripts, and documents. It produces a thr
 ## Architecture
 
 ```
-                    ┌──────────────┐
-                    │   CLI (cli.py)│
-                    └──────┬───────┘
-                           │
-                    ┌──────▼───────┐
-                    │  File Loader  │  ← Type detection, metadata extraction
-                    └──────┬───────┘
-                           │
-              ┌────────────┼────────────┐
-              │            │            │
-        ┌─────▼──┐  ┌─────▼──┐  ┌─────▼──────┐
-        │ Common │  │Format- │  │Intelligence│
-        │Analyzers│  │Specific│  │   Layer    │
-        └────┬───┘  └────┬───┘  └─────┬──────┘
-             │           │            │
-             └─────┬─────┘            │
-                   │                  │
-            ┌──────▼───────┐   ┌─────▼──────┐
-            │ AnalysisResult│◄──┤YARA+Caps+VT│
-            └──────┬───────┘   └────────────┘
-                   │
-          ┌────────┼────────┐
-          │                 │
-   ┌──────▼──────┐  ┌──────▼──────┐  ┌──────▼──────┐
-   │  Heuristic  │  │  Neural Net │  │  LightGBM   │
-   │   Scorer    │  │   Scorer    │  │   Scorer    │
-   └──────┬──────┘  └──────┬──────┘  └──────┬──────┘
-          │                │                │
-          └────────┬───────┴────────────────┘
-                   │
-            ┌──────▼───────┐
-            │   Reporter   │  ← Terminal (Rich) + AI Insights (Gemini) or JSON
-            └──────────────┘
+                    
+                       CLI (cli.py)
+                    
+                           
+                    
+                      File Loader    ← Type detection, metadata extraction
+                    
+                           
+              
+                                      
+            
+         Common   Format-   Intelligence
+        Analyzers  Specific     Layer    
+            
+                                    
+                         
+                                     
+               
+             AnalysisResultYARA+Caps+VT
+               
+                   
+          
+                           
+       
+     Heuristic      Neural Net     LightGBM   
+      Scorer         Scorer         Scorer    
+       
+                                          
+          
+                   
+            
+               Reporter     ← Terminal (Rich) + AI Insights (Gemini) or JSON
+            
 ```
 
 ---
@@ -77,43 +77,43 @@ It supports PE (EXE/DLL), ELF, Mach-O, scripts, and documents. It produces a thr
 
 ```
 FileAnalysis/
-├── pyproject.toml              # Project config, dependencies, entry points
-├── requirements.txt            # Pip-compatible dependency list
-├── rules/                      # Built-in YARA rule files (.yar)
-│
-└── fileanalysis/               # Main Python package
-    ├── __init__.py
-    ├── cli.py                  # Click CLI entry point
-    ├── loader.py               # File loading, type detection, metadata
-    │
-    ├── analyzers/              # All analysis modules
-    │   ├── base.py             # AnalysisResult, dataclasses, BaseAnalyzer ABC
-    │   ├── hashing.py          # MD5, SHA-1, SHA-256, ssdeep, imphash
-    │   ├── entropy.py          # Shannon entropy analysis
-    │   ├── strings.py          # String extraction and classification
-    │   ├── pe_analyzer.py      # Windows PE (EXE) analysis
-    │   ├── dll_analyzer.py     # DLL-specific threat analysis
-    │   ├── elf_analyzer.py     # Linux ELF analysis
-    │   ├── macho_analyzer.py   # macOS Mach-O analysis
-    │   ├── script_analyzer.py  # Script file analysis (Python, PS, Bash, etc.)
-    │   └── document_analyzer.py # Office/PDF document analysis
-    │
-    ├── intelligence/           # Threat intelligence modules
-    │   ├── yara_scanner.py     # YARA rule matching engine
-    │   ├── capability_mapper.py # MITRE ATT&CK capability mapping
-    │
-    ├── scoring/                # Threat scoring engines
-    │   ├── scorer.py           # Heuristic threat scorer
-    │   ├── features.py         # Feature extraction for ML models
-    │   ├── nn_model.py         # ThreatNet MLP model + inference wrapper
-    │   ├── ml_model.py         # LightGBM tree model + inference wrapper
-    │   ├── sandbox_train.py    # Real malware training (Docker)
-    │   ├── threat_model.pt     # Pre-trained NN weights
-    │   └── threat_model_lgb.txt# Pre-trained LightGBM weights
-    │
-    └── reporting/              # Output formatting
-        ├── terminal_report.py  # Rich terminal output
-        └── json_report.py      # JSON export
+ pyproject.toml              # Project config, dependencies, entry points
+ requirements.txt            # Pip-compatible dependency list
+ rules/                      # Built-in YARA rule files (.yar)
+
+ fileanalysis/               # Main Python package
+     __init__.py
+     cli.py                  # Click CLI entry point
+     loader.py               # File loading, type detection, metadata
+    
+     analyzers/              # All analysis modules
+        base.py             # AnalysisResult, dataclasses, BaseAnalyzer ABC
+        hashing.py          # MD5, SHA-1, SHA-256, ssdeep, imphash
+        entropy.py          # Shannon entropy analysis
+        strings.py          # String extraction and classification
+        pe_analyzer.py      # Windows PE (EXE) analysis
+        dll_analyzer.py     # DLL-specific threat analysis
+        elf_analyzer.py     # Linux ELF analysis
+        macho_analyzer.py   # macOS Mach-O analysis
+        script_analyzer.py  # Script file analysis (Python, PS, Bash, etc.)
+        document_analyzer.py # Office/PDF document analysis
+    
+     intelligence/           # Threat intelligence modules
+        yara_scanner.py     # YARA rule matching engine
+        capability_mapper.py # MITRE ATT&CK capability mapping
+    
+     scoring/                # Threat scoring engines
+        scorer.py           # Heuristic threat scorer
+        features.py         # Feature extraction for ML models
+        nn_model.py         # ThreatNet MLP model + inference wrapper
+        ml_model.py         # LightGBM tree model + inference wrapper
+        sandbox_train.py    # Real malware training (Docker)
+        threat_model.pt     # Pre-trained NN weights
+        threat_model_lgb.txt# Pre-trained LightGBM weights
+    
+     reporting/              # Output formatting
+         terminal_report.py  # Rich terminal output
+         json_report.py      # JSON export
 ```
 
 ---
@@ -220,9 +220,9 @@ These indicators feed into both the **CapabilityMapper** and the **Scorer**.
 Maps detected APIs + indicators → high-level threat capabilities (MITRE ATT&CK-aligned):
 
 ```
-CreateRemoteThread API  ──┐
-VirtualAllocEx API       ──┼──→  "Process Injection" (T1055)
-WriteProcessMemory API   ──┘
+CreateRemoteThread API  
+VirtualAllocEx API       →  "Process Injection" (T1055)
+WriteProcessMemory API   
 ```
 
 Rules are defined in `CAPABILITY_RULES` — a list of dicts mapping API names and indicator names to capability metadata. The mapper also generates plain-English **environment impact statements**.
@@ -263,8 +263,8 @@ A Gradient Boosting Decision Tree model trained on the same 30 features as the N
 | 0–20 | 🟢 CLEAN | No indicators found |
 | 21–40 | 🟡 LOW | Minor suspicious indicators |
 | 41–60 | 🟠 MODERATE | Multiple suspicious indicators |
-| 61–80 | 🔴 HIGH | Strong malware indicators |
-| 81–100 | ⛔ CRITICAL | Almost certainly malicious |
+| 61–80 |  HIGH | Strong malware indicators |
+| 81–100 |  CRITICAL | Almost certainly malicious |
 
 ---
 
@@ -510,8 +510,8 @@ The synthetic training pipeline works well as a starting point, but the model wi
 Create a directory structure:
 ```
 training_data/
-├── malicious/     # Known malware samples
-└── benign/        # Known clean files
+ malicious/     # Known malware samples
+ benign/        # Known clean files
 ```
 
 ### Step 2: Generate feature datasets

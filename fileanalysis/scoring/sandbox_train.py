@@ -67,9 +67,9 @@ from fileanalysis.scoring.nn_model import MalConv, MAX_LEN
 from torch.utils.data import Dataset
 import lightgbm as lgb
 
-# ──────────────────────────────────────────────────────────────
+# 
 # Config
-# ──────────────────────────────────────────────────────────────
+# 
 DIKE_REPO = "https://github.com/iosifache/DikeDataset.git"
 VXUG_REPO = "https://github.com/vxunderground/MalwareSourceCode.git"
 ZOO_REPO = "https://github.com/ytisf/theZoo.git"
@@ -96,44 +96,44 @@ WORKSPACE_SCALER_PATH = WORKSPACE_DIR / "feature_scaler.npz"
 console = Console()
 
 
-# ──────────────────────────────────────────────────────────────
+# 
 # Dataset fetchers
-# ──────────────────────────────────────────────────────────────
+# 
 def clone_dike():
     """Clone DikeDataset (benign + malware PE files)."""
     if not DIKE_DIR.exists():
-        console.print("[bold cyan]📦 Cloning DikeDataset…[/]")
+        console.print("[bold cyan] Cloning DikeDataset…[/]")
         DIKE_DIR.parent.mkdir(parents=True, exist_ok=True)
         subprocess.run(
             ["git", "clone", "--depth", "1", DIKE_REPO, str(DIKE_DIR)],
             check=True,
         )
     else:
-        console.print("[green]✓ DikeDataset already present.[/]")
+        console.print("[green] DikeDataset already present.[/]")
 
 
 def clone_zoo():
     """Clone theZoo and extract password-protected malware zips."""
     if not ZOO_DIR.exists():
-        console.print("[bold cyan]📦 Cloning theZoo…[/]")
+        console.print("[bold cyan] Cloning theZoo…[/]")
         ZOO_DIR.parent.mkdir(parents=True, exist_ok=True)
         subprocess.run(
             ["git", "clone", "--depth", "1", ZOO_REPO, str(ZOO_DIR)],
             check=True,
         )
     else:
-        console.print("[green]✓ theZoo already present.[/]")
+        console.print("[green] theZoo already present.[/]")
 
     # Extract password-protected zips (password = "infected")
     extract_dir = DATASET_ROOT / "zoo_extracted"
     if extract_dir.exists() and any(extract_dir.iterdir()):
-        console.print("[green]✓ theZoo samples already extracted.[/]")
+        console.print("[green] theZoo samples already extracted.[/]")
         return extract_dir
 
     extract_dir.mkdir(parents=True, exist_ok=True)
     malware_dir = ZOO_DIR / "malware" / "Binaries"
     if not malware_dir.exists():
-        console.print("[yellow]⚠ theZoo Binaries directory not found.[/]")
+        console.print("[yellow] theZoo Binaries directory not found.[/]")
         return extract_dir
 
     zips = list(malware_dir.rglob("*.zip"))
@@ -166,7 +166,7 @@ def clone_zoo():
             finally:
                 progress.update(task_zoo, advance=1)
 
-    console.print(f"[green]✓ Extracted {extracted} theZoo archives.[/]")
+    console.print(f"[green] Extracted {extracted} theZoo archives.[/]")
     return extract_dir
 
 
@@ -178,7 +178,7 @@ def fetch_github_datasets():
 
     for name, repo_url, target_dir in datasets:
         if not target_dir.exists():
-            console.print(f"[bold cyan]📦 Cloning {name}…[/]")
+            console.print(f"[bold cyan] Cloning {name}…[/]")
             target_dir.parent.mkdir(parents=True, exist_ok=True)
             try:
                 subprocess.run(
@@ -187,9 +187,9 @@ def fetch_github_datasets():
                     timeout=300,
                 )
             except (subprocess.CalledProcessError, subprocess.TimeoutExpired) as e:
-                console.print(f"[yellow]⚠ Failed to clone {name}: {e}[/]")
+                console.print(f"[yellow] Failed to clone {name}: {e}[/]")
         else:
-            console.print(f"[green]✓ {name} already present.[/]")
+            console.print(f"[green] {name} already present.[/]")
 
     # Extract password-protected zips (password = "infected") if any exist
     extract_dir = DATASET_ROOT / "github_extracted"
@@ -228,7 +228,7 @@ def fetch_github_datasets():
                 finally:
                     progress.update(task_gh, advance=1)
         if extracted > 0:
-            console.print(f"[green]✓ Extracted {extracted} GitHub archives.[/]")
+            console.print(f"[green] Extracted {extracted} GitHub archives.[/]")
 
 
 
@@ -239,7 +239,7 @@ def collect_system_benign():
     These are known-clean system binaries, libraries, scripts, and docs
     that give the model a realistic sense of what benign files look like.
     """
-    console.print("[bold cyan]📦 Collecting system binaries as benign samples…[/]")
+    console.print("[bold cyan] Collecting system binaries as benign samples…[/]")
     SYSTEM_BENIGN_DIR.mkdir(parents=True, exist_ok=True)
 
     # Directories containing known-good files inside a typical Ubuntu Docker image
@@ -286,11 +286,11 @@ def collect_system_benign():
         if collected >= 5000:
             break
 
-    console.print(f"[green]✓ Collected {collected} system benign files.[/]")
+    console.print(f"[green] Collected {collected} system benign files.[/]")
 
-# ──────────────────────────────────────────────────────────────
+# 
 # Feature extraction
-# ──────────────────────────────────────────────────────────────
+# 
 def _process_worker(fpath, label, q):
     extractor = FeatureExtractor()
     analyzers = [
@@ -377,11 +377,11 @@ def collect_files(directory: Path, max_files: int = 10000) -> list[Path]:
     return files
 
 
-# ──────────────────────────────────────────────────────────────
+# 
 # Training
-# ──────────────────────────────────────────────────────────────
+# 
 def main():
-    console.rule("[bold cyan]⚡ ThreatNet Multi-Dataset Training[/]")
+    console.rule("[bold cyan] ThreatNet Multi-Dataset Training[/]")
 
     cache_file = "dataset_cache.npz"
     local_cache_path = Path("/workspace") / cache_file
@@ -390,7 +390,7 @@ def main():
     used_cache = False
 
     if local_cache_path.exists():
-        console.print("[bold cyan]📦 Checking local disk for cached dataset…[/]")
+        console.print("[bold cyan] Checking local disk for cached dataset…[/]")
         try:
             data = np.load(local_cache_path, allow_pickle=True)
             # Convert to list to allow appending
@@ -398,9 +398,9 @@ def main():
             old_y = list(data['y'])
             old_paths = list(data['paths'] if 'paths' in data else np.array(["unknown"] * len(old_X)))
             used_cache = True
-            console.print(f"[bold green]✓ Loaded {len(old_X)} feature vectors from cache.[/]")
+            console.print(f"[bold green] Loaded {len(old_X)} feature vectors from cache.[/]")
         except Exception as e:
-            console.print(f"[yellow]⚠ Failed to load cache: {e}. Will extract from scratch.[/]")
+            console.print(f"[yellow] Failed to load cache: {e}. Will extract from scratch.[/]")
 
     # 1. Fetch all datasets (pulls latest from repos)
     clone_dike()
@@ -453,7 +453,7 @@ def main():
                 new_y.extend(lbls)
                 new_paths.extend(pths)
 
-        console.print(f"[bold green]✓ Extracted {len(new_X)} NEW feature vectors.[/]")
+        console.print(f"[bold green] Extracted {len(new_X)} NEW feature vectors.[/]")
 
     # Combine old and new
     X_list = old_X + new_X
@@ -469,11 +469,11 @@ def main():
     paths = np.array(paths_list, dtype=str)
 
     if len(new_X) > 0:
-        console.print("[bold cyan]📦 Saving updated dataset cache locally…[/]")
+        console.print("[bold cyan] Saving updated dataset cache locally…[/]")
         try:
             local_cache_path.parent.mkdir(parents=True, exist_ok=True)
             np.savez(local_cache_path, X=X, y=y, paths=paths)
-            console.print("[bold green]✓ Saved updated dataset cache locally![/]")
+            console.print("[bold green] Saved updated dataset cache locally![/]")
         except Exception as e:
             console.print(f"[bold red]Failed to save cache locally: {e}[/]")
     else:
@@ -533,7 +533,7 @@ def main():
             return torch.tensor(tensor, dtype=torch.long), torch.tensor(lbl, dtype=torch.float32).view(-1)
 
     # 6. Train MalConv (PyTorch)
-    console.print("[bold cyan]🔥 Training MalConv (Deep Learning) on raw bytes…[/]")
+    console.print("[bold cyan] Training MalConv (Deep Learning) on raw bytes…[/]")
     import torch
     torch.set_num_threads(2) # Prevent CPU thread explosion segfault in Docker
     model = MalConv()
@@ -545,9 +545,9 @@ def main():
             state_dict = torch.load(WORKSPACE_MODEL_PATH, map_location="cpu", weights_only=True)
             model.load_state_dict(state_dict)
             fine_tuning = True
-            console.print("[bold green]✓ Loaded existing MalConv weights for Fine-Tuning![/]")
+            console.print("[bold green] Loaded existing MalConv weights for Fine-Tuning![/]")
         except Exception as e:
-            console.print(f"[yellow]⚠ Failed to load existing weights: {e}[/]")
+            console.print(f"[yellow] Failed to load existing weights: {e}[/]")
 
     optimizer = torch.optim.Adam(model.parameters(), lr=0.001 if not fine_tuning else 0.0001, weight_decay=1e-4)
     criterion = nn.BCELoss()
@@ -630,7 +630,7 @@ def main():
         if best_state:
             model.load_state_dict(best_state)
     else:
-        console.print("[yellow]⚠ No data for PyTorch training loop.[/]")
+        console.print("[yellow] No data for PyTorch training loop.[/]")
 
     # 7. Final evaluation
     console.rule("[bold]Final Evaluation")
@@ -660,7 +660,7 @@ def main():
     fnr = fn / max(fn + tp, 1) * 100
     specificity = tn / max(tn + fp, 1) * 100
 
-    metrics_table = Table(title="📊 Validation Metrics")
+    metrics_table = Table(title=" Validation Metrics")
     metrics_table.add_column("Metric", style="bold")
     metrics_table.add_column("Value", style="cyan")
     metrics_table.add_row("Accuracy", f"{accuracy:.1f}%")
@@ -673,7 +673,7 @@ def main():
     metrics_table.add_row("Best Val Acc", f"{best_val_acc:.1f}%")
     console.print(metrics_table)
 
-    cm_table = Table(title="🔢 Confusion Matrix")
+    cm_table = Table(title=" Confusion Matrix")
     cm_table.add_column("", style="bold")
     cm_table.add_column("Pred Benign", style="green")
     cm_table.add_column("Pred Malware", style="red")
@@ -695,8 +695,8 @@ def main():
     with open(fn_file, "w") as f:
         f.write("\n".join(fn_paths))
         
-    console.print(f"[bold yellow]⚠ Exported {len(fp_paths)} false positives to {fp_file}[/]")
-    console.print(f"[bold yellow]⚠ Exported {len(fn_paths)} false negatives to {fn_file}[/]")
+    console.print(f"[bold yellow] Exported {len(fp_paths)} false positives to {fp_file}[/]")
+    console.print(f"[bold yellow] Exported {len(fn_paths)} false negatives to {fn_file}[/]")
 
     # 8. Train LightGBM model
     console.rule("[bold]Training LightGBM Baseline")
@@ -743,7 +743,7 @@ def main():
     fnr_lgb = fn_lgb / max(fn_lgb + tp_lgb, 1) * 100
     spec_lgb = tn_lgb / max(tn_lgb + fp_lgb, 1) * 100
 
-    metrics_table_lgb = Table(title="🌲 LightGBM Validation Metrics")
+    metrics_table_lgb = Table(title=" LightGBM Validation Metrics")
     metrics_table_lgb.add_column("Metric", style="bold")
     metrics_table_lgb.add_column("Value", style="cyan")
     metrics_table_lgb.add_row("Accuracy", f"{acc_lgb:.1f}%")
@@ -759,15 +759,15 @@ def main():
     console.rule("[bold]Saving")
     WORKSPACE_MODEL_PATH.parent.mkdir(parents=True, exist_ok=True)
     torch.save(model.state_dict(), WORKSPACE_MODEL_PATH)
-    console.print(f"[bold green]✓ PyTorch Model saved to {WORKSPACE_MODEL_PATH}[/]")
+    console.print(f"[bold green] PyTorch Model saved to {WORKSPACE_MODEL_PATH}[/]")
 
     lgb_model.save_model(str(WORKSPACE_LGB_MODEL_PATH))
-    console.print(f"[bold green]✓ LightGBM Model saved to {WORKSPACE_LGB_MODEL_PATH}[/]")
+    console.print(f"[bold green] LightGBM Model saved to {WORKSPACE_LGB_MODEL_PATH}[/]")
 
     np.savez(WORKSPACE_SCALER_PATH, mean=feat_mean, std=feat_std)
-    console.print(f"[bold green]✓ Scaler saved to {WORKSPACE_SCALER_PATH}[/]")
+    console.print(f"[bold green] Scaler saved to {WORKSPACE_SCALER_PATH}[/]")
 
-    console.rule("[bold green]✓ Training complete!")
+    console.rule("[bold green] Training complete!")
 
 
 if __name__ == "__main__":
