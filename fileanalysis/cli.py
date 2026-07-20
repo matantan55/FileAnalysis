@@ -49,38 +49,35 @@ def cli(file_path: str, json_format: bool, yara_rules: str | None) -> None:
         BarColumn(bar_width=30),
         TaskProgressColumn(),
         console=console,
-        transient=True,
         disable=not show_progress,
     ) as progress:
-        # Total steps: load(1) + common(3) + format(1) + yara(1) + mitre(1) + heuristic(1) + nn(1) + ai(1) = 10
-        task = progress.add_task("Scanning…", total=10)
 
         # 1. Load file
-        progress.update(task, description="📂 Loading file…")
+        t_load = progress.add_task("📂 Loading file…", total=1)
         try:
             file_bytes, result = load_file(file_path)
         except Exception as e:
             click.secho(f"[-] Error loading file: {e}", fg="red", err=True)
             sys.exit(1)
-        progress.advance(task)
+        progress.advance(t_load)
 
         # 2. Common analyzers
-        progress.update(task, description="🔑 Computing hashes…")
+        t_hash = progress.add_task("🔑 Computing hashes…", total=1)
         HashAnalyzer().analyze(file_path, file_bytes, result)
-        progress.advance(task)
+        progress.advance(t_hash)
 
-        progress.update(task, description="🔥 Analyzing entropy…")
+        t_entropy = progress.add_task("🔥 Analyzing entropy…", total=1)
         EntropyAnalyzer().analyze(file_path, file_bytes, result)
-        progress.advance(task)
+        progress.advance(t_entropy)
 
-        progress.update(task, description="🔍 Extracting strings…")
+        t_strings = progress.add_task("🔍 Extracting strings…", total=1)
         StringAnalyzer().analyze(file_path, file_bytes, result)
-        progress.advance(task)
+        progress.advance(t_strings)
 
         # 3. Format-specific analyzers
         file_type = result.metadata.file_type
         format_label = file_type.upper() if file_type else "generic"
-        progress.update(task, description=f"🧬 Running {format_label} analyzer…")
+        t_format = progress.add_task(f"🧬 Running {format_label} analyzer…", total=1)
 
         if file_type == "pe":
             PEAnalyzer().analyze(file_path, file_bytes, result)
@@ -94,37 +91,38 @@ def cli(file_path: str, json_format: bool, yara_rules: str | None) -> None:
             ScriptAnalyzer().analyze(file_path, file_bytes, result)
         elif file_type == "document":
             DocumentAnalyzer().analyze(file_path, file_bytes, result)
-        progress.advance(task)
+        progress.advance(t_format)
 
         # 4. YARA rule scanner
-        progress.update(task, description="🕵️ Matching YARA signatures…")
+        t_yara = progress.add_task("🕵️ Matching YARA signatures…", total=1)
         scanner = YaraScanner(custom_rules_dir=yara_rules)
         scanner.scan(file_path, result)
-        progress.advance(task)
+        progress.advance(t_yara)
 
         # 5. MITRE ATT&CK capability mapper
-        progress.update(task, description="🎯 Mapping MITRE ATT&CK…")
+        t_mitre = progress.add_task("🎯 Mapping MITRE ATT&CK…", total=1)
         mapper = CapabilityMapper()
         mapper.map_capabilities(result)
-        progress.advance(task)
+        progress.advance(t_mitre)
 
         # 6. Heuristic scoring
-        progress.update(task, description="📊 Heuristic scoring…")
+        t_heur = progress.add_task("📊 Heuristic scoring…", total=1)
         heuristic_scorer = ThreatScorer()
         heuristic_scorer.calculate_score(result)
-        progress.advance(task)
+        progress.advance(t_heur)
 
         # 7. Neural network scoring
-        progress.update(task, description="🧠 Neural network scoring…")
+        t_nn = progress.add_task("🧠 Neural network scoring…", total=1)
         try:
             nn_scorer = NNThreatScorer()
             nn_scorer.calculate_score(result)
             result.scoring_method = "dual"
         except (FileNotFoundError, ImportError, Exception):
             pass
+        progress.advance(t_nn)
 
         # 7.5 LightGBM Machine Learning scoring
-        progress.update(task, description="🌲 Machine learning scoring…")
+        t_ml = progress.add_task("🌲 Machine learning scoring…", total=1)
         try:
             ml_scorer = LightGBMThreatScorer()
             ml_scorer.calculate_score(result)
@@ -135,6 +133,7 @@ def cli(file_path: str, json_format: bool, yara_rules: str | None) -> None:
         except (FileNotFoundError, ImportError, Exception):
             if result.scoring_method != "dual":
                 result.scoring_method = "heuristic"
+        progress.advance(t_ml)
                 
         # 7.6 Calculate Ensemble Score
         if result.scoring_method == "triple":
@@ -172,17 +171,15 @@ def cli(file_path: str, json_format: bool, yara_rules: str | None) -> None:
             result.ensemble_risk_level = RiskLevel.HIGH
         else:
             result.ensemble_risk_level = RiskLevel.CRITICAL
-            
-        progress.advance(task)
 
         # 8. AI Insights Generation
-        progress.update(task, description="💡 Generating AI insights…")
+        t_ai = progress.add_task("💡 Generating AI insights…", total=1)
         try:
             ai_gen = AIInsightsGenerator()
             result.ai_summary = ai_gen.generate(result)
         except Exception:
             pass
-        progress.advance(task)
+        progress.advance(t_ai)
 
     # Render report (to stdout, after progress is cleared)
     if json_format:
