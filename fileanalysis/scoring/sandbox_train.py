@@ -712,15 +712,20 @@ def main():
         'verbose': -1
     }
 
-    # Train LightGBM with early stopping
+    # Train LightGBM incrementally without early stopping
+    lgb_init_model = None
+    if WORKSPACE_LGB_MODEL_PATH.exists() and len(new_paths) > 0:
+        lgb_init_model = str(WORKSPACE_LGB_MODEL_PATH)
+        console.print("[bold green] Continuing LightGBM training from existing model...[/]")
+        
     evals_result = {}
     lgb_model = lgb.train(
         params,
         lgb_train,
-        num_boost_round=1000,
+        num_boost_round=100, # Add 100 new trees each run
         valid_sets=[lgb_train, lgb_val],
+        init_model=lgb_init_model,
         callbacks=[
-            lgb.early_stopping(stopping_rounds=50),
             lgb.record_evaluation(evals_result)
         ]
     )
