@@ -157,11 +157,11 @@ Every scan produces **independent threat scores** and an ensemble score:
 
 | Score | Level | Meaning |
 |-------|-------|---------|
-| 0–20 | 🟢 CLEAN | No indicators found |
-| 21–40 | 🟡 LOW | Minor suspicious indicators |
-| 41–60 | 🟠 MODERATE | Multiple suspicious indicators |
-| 61–80 |  HIGH | Strong malware indicators |
-| 81–100 |  CRITICAL | Almost certainly malicious |
+| 0–20 | CLEAN | No indicators found |
+| 21–40 | LOW | Minor suspicious indicators |
+| 41–60 | MODERATE | Multiple suspicious indicators |
+| 61–80 | HIGH | Strong malware indicators |
+| 81–100 | CRITICAL | Almost certainly malicious |
 
 ---
 
