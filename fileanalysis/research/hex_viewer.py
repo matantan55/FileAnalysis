@@ -69,6 +69,40 @@ SUSPICIOUS_APIS = {
     "LoadLibrary", "GetProcAddress", "NtQueryInformation",
 }
 
+# Suspicious assembly mnemonics/patterns → threat description
+# Each entry: (match_function, threat_label)
+# match_function receives (mnemonic, op_str) and returns True if suspicious
+SUSPICIOUS_ASM_PATTERNS: list[tuple[callable, str]] = [
+    # Syscall / interrupt-based execution
+    (lambda m, o: m == "syscall",                        "Direct syscall (evasion / shellcode)"),
+    (lambda m, o: m == "sysenter",                       "Sysenter (evasion / shellcode)"),
+    (lambda m, o: m == "int" and "0x80" in o,            "Linux syscall via int 0x80"),
+    (lambda m, o: m == "int" and "0x2e" in o,            "NT syscall via int 0x2e"),
+    (lambda m, o: m == "int3" or (m == "int" and "3" in o), "INT3 breakpoint (anti-debug)"),
+    # Anti-debugging / anti-VM
+    (lambda m, o: m == "cpuid",                          "CPUID (VM / sandbox detection)"),
+    (lambda m, o: m == "rdtsc",                          "RDTSC (timing-based anti-debug)"),
+    (lambda m, o: m == "rdtscp",                         "RDTSCP (timing-based anti-debug)"),
+    (lambda m, o: m in ("sidt", "sgdt", "sldt", "str"),  "Privileged table read (VM detection)"),
+    # Self-modifying / shellcode tricks
+    (lambda m, o: m == "call" and o.startswith("0x") and abs(int(o, 16)) < 0x10, "Call-to-self (shellcode decoder)"),
+    (lambda m, o: m == "xor" and len(o.split(",")) == 2 and o.split(",")[0].strip() == o.split(",")[1].strip(), "XOR reg, reg (zeroing / decode loop)"),
+    # Process injection patterns
+    (lambda m, o: m == "call" and "rax" in o,            "Indirect call via RAX (dynamic API)"),
+    (lambda m, o: m == "call" and "rbx" in o,            "Indirect call via RBX (dynamic API)"),
+    (lambda m, o: m == "call" and "r10" in o,            "Indirect call via R10 (dynamic API)"),
+    (lambda m, o: m == "call" and "r11" in o,            "Indirect call via R11 (dynamic API)"),
+    (lambda m, o: m == "jmp" and "rax" in o,             "Indirect jump via RAX (dynamic dispatch)"),
+    (lambda m, o: m == "jmp" and "qword ptr" in o,       "Indirect jump via memory (IAT/hook)"),
+    (lambda m, o: m == "call" and "qword ptr" in o,      "Indirect call via memory (IAT/hook)"),
+    # Stack pivoting / ROP
+    (lambda m, o: m == "xchg" and "esp" in o,            "Stack pivot (ROP chain setup)"),
+    (lambda m, o: m == "xchg" and "rsp" in o,            "Stack pivot (ROP chain setup)"),
+    # Heaven's Gate
+    (lambda m, o: m == "retf",                           "Far return (Heaven's Gate / mode switch)"),
+    (lambda m, o: m == "ljmp" or (m == "jmp" and "far" in o), "Far jump (Heaven's Gate / mode switch)"),
+]
+
 
 # ─── Binary Annotator ──────────────────────────────────────────────
 
@@ -406,20 +440,40 @@ class HexViewer:
 
         # Assembly column
         asm_result = None
+        asm_mnemonic = None
+        asm_op_str = None
         for byte_off in range(offset, offset + len(chunk)):
             asm = self.disasm.get_asm_at(byte_off)
             if asm:
                 asm_result = asm
+                parts = asm.split(None, 1)
+                asm_mnemonic = parts[0] if parts else ""
+                asm_op_str = parts[1] if len(parts) > 1 else ""
                 break
 
-        if asm_result:
+        # Check if this instruction matches a suspicious pattern
+        threat_label = None
+        if asm_mnemonic:
+            for match_fn, label in SUSPICIOUS_ASM_PATTERNS:
+                try:
+                    if match_fn(asm_mnemonic, asm_op_str):
+                        threat_label = label
+                        break
+                except Exception:
+                    pass
+
+        if asm_result and threat_label:
+            asm_text = Text(f"{asm_result}", style="bold red")
+        elif asm_result:
             asm_text = Text(f"{asm_result}", style="bold bright_green")
         else:
             asm_text = Text("")
 
-        # Annotation column
+        # Annotation column — threat label takes priority
         ann = self._get_annotation_for_row(offset)
-        if ann:
+        if threat_label:
+            ann_text = Text(f"⚠ {threat_label}", style="bold red")
+        elif ann:
             ann_text = Text(f"{ann.label}", style=ann.style)
         else:
             ann_text = Text("")
