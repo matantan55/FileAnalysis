@@ -17,6 +17,8 @@ from rich.tree import Tree
 from prompt_toolkit import PromptSession
 from prompt_toolkit.key_binding import KeyBindings
 
+from fileanalysis.intelligence.asm_insights import ASMInsightsGenerator
+
 
 # ─── Annotation Data ────────────────────────────────────────────────
 
@@ -248,7 +250,7 @@ class BasicBlock:
 class Disassembler:
     """Detects architecture from binary headers and disassembles code sections."""
 
-    def __init__(self, data: bytes):
+    def __init__(self, data: bytes, console: Console | None = None):
         self.data = data
         self.arch = None
         self.mode = None
@@ -258,9 +260,9 @@ class Disassembler:
         # Precomputed: file_offset → assembly string
         self._asm_cache: dict[int, str] = {}
 
-        self._detect_and_init()
+        self._detect_and_init(console)
 
-    def _detect_and_init(self) -> None:
+    def _detect_and_init(self, console: Console | None = None) -> None:
         """Detect arch from file headers and locate code sections."""
         data = self.data
 
@@ -345,16 +347,45 @@ class Disassembler:
         if self.arch is not None:
             self.md = capstone.Cs(self.arch, self.mode)
             self.md.skipdata = True
-            self._disassemble_sections()
+            self._disassemble_sections(console)
 
-    def _disassemble_sections(self) -> None:
+    def _disassemble_sections(self, console: Console | None = None) -> None:
         """Pre-disassemble all code sections and cache by file offset."""
         if not self.md:
             return
-        for sec_offset, sec_size in self.code_sections:
-            code = self.data[sec_offset:sec_offset + sec_size]
-            for insn in self.md.disasm(code, sec_offset):
-                self._asm_cache[insn.address] = f"{insn.mnemonic} {insn.op_str}".strip()
+            
+        total_size = sum(sz for _, sz in self.code_sections)
+        from rich.progress import Progress, SpinnerColumn, TextColumn, BarColumn, TaskProgressColumn, TimeElapsedColumn
+        
+        progress = None
+        if console and total_size > 0:
+            progress = Progress(
+                SpinnerColumn(),
+                TextColumn("[progress.description]{task.description}"),
+                BarColumn(),
+                TaskProgressColumn(),
+                TimeElapsedColumn(),
+                console=console,
+                transient=True,
+            )
+            task_id = progress.add_task("[cyan]Disassembling binary...", total=total_size)
+            progress.start()
+            
+        try:
+            for sec_offset, sec_size in self.code_sections:
+                code = self.data[sec_offset:sec_offset + sec_size]
+                last_addr = sec_offset
+                for insn in self.md.disasm(code, sec_offset):
+                    self._asm_cache[insn.address] = f"{insn.mnemonic} {insn.op_str}".strip()
+                    if progress and len(self._asm_cache) % 2000 == 0:
+                        progress.update(task_id, advance=(insn.address - last_addr))
+                        last_addr = insn.address
+                
+                if progress:
+                    progress.update(task_id, advance=(sec_offset + sec_size - last_addr))
+        finally:
+            if progress:
+                progress.stop()
 
     def get_asm_at(self, offset: int) -> str | None:
         """Return the assembly instruction at the given file offset, or None."""
@@ -472,8 +503,7 @@ class HexViewer:
                 self._ann_map[ann.offset] = ann
 
         # Disassembler
-        self.console.print("[dim]Disassembling code sections...[/]")
-        self.disasm = Disassembler(self.data)
+        self.disasm = Disassembler(self.data, console=self.console)
         if self.disasm.code_sections:
             arch_name = {capstone.CS_ARCH_X86: "x86", capstone.CS_ARCH_ARM64: "ARM64"}.get(self.disasm.arch, "unknown")
             mode_name = {capstone.CS_MODE_32: "32-bit", capstone.CS_MODE_64: "64-bit", capstone.CS_MODE_ARM: ""}.get(self.disasm.mode, "")
@@ -626,7 +656,7 @@ class HexViewer:
             padding=(1, 2),
         )
 
-    def _render_cfg(self, start_offset: int) -> None:
+    def _render_cfg(self, start_offset: int, generate_insights: bool = False) -> None:
         """Extract and render a CFG for the assembly starting at start_offset."""
         if not self.disasm.is_code_offset(start_offset):
             self.console.print(f"[red]Error: Offset 0x{start_offset:X} is not within a code section.[/]")
@@ -639,6 +669,33 @@ class HexViewer:
             input("\nPress Enter to continue...")
             return
             
+        insights_map = {}
+        if generate_insights:
+            if not hasattr(self, '_ai_engine'):
+                self.console.print("[dim]Loading AI model for insights (this may take a moment)...[/]")
+                self._ai_engine = ASMInsightsGenerator()
+                
+            from rich.progress import Progress, SpinnerColumn, TextColumn, BarColumn, TaskProgressColumn, TimeElapsedColumn, TimeRemainingColumn
+            
+            with Progress(
+                SpinnerColumn(),
+                TextColumn("[progress.description]{task.description}"),
+                BarColumn(),
+                TaskProgressColumn(),
+                TimeElapsedColumn(),
+                TimeRemainingColumn(),
+                console=self.console,
+                transient=True
+            ) as progress:
+                task = progress.add_task("[cyan]Generating AI Assembly Insights...", total=len(blocks))
+                for block in blocks:
+                    block_asm = "\n".join([f"0x{a:X}: {i}" for a, i in block.instructions])
+                    try:
+                        insights_map[block.id_addr] = self._ai_engine.generate_insight(block_asm)
+                    except Exception as e:
+                        insights_map[block.id_addr] = f"Error generating insight: {e}"
+                    progress.advance(task)
+
         block_map = {b.id_addr: b for b in blocks}
 
         def build_tree(addr: int, tree_node: Tree, visited: set[int]):
@@ -652,6 +709,8 @@ class HexViewer:
                 
             visited.add(addr)
             block = block_map[addr]
+            
+            ai_insight = insights_map.get(addr)
             
             insn_text = ""
             for i_addr, asm in block.instructions:
@@ -668,6 +727,9 @@ class HexViewer:
                     insn_text += f"[red]0x{i_addr:X}: {asm:<30} ⚠ {threat}[/]\n"
                 else:
                     insn_text += f"[cyan]0x{i_addr:X}:[/] {asm}\n"
+                    
+            if ai_insight:
+                insn_text += f"\n[bold green]💡 AI Insight:[/] [italic green]{ai_insight}[/]"
                     
             panel = Panel(insn_text.strip(), title=f"[bold magenta]Block 0x{addr:X}[/]", border_style="magenta", expand=False)
             node = tree_node.add(panel)
@@ -813,7 +875,14 @@ class HexViewer:
                             self.console.print("[red]No executable code found on current page to graph. Supply an offset: c <offset>[/]")
                             continue
                             
-                    self._render_cfg(target_offset)
+                    # Ask for AI Insights
+                    try:
+                        ans = session.prompt("Generate AI insights for this graph? (y/n) > ").strip().lower()
+                        gen_insights = ans in ("y", "yes")
+                    except (EOFError, KeyboardInterrupt):
+                        gen_insights = False
+
+                    self._render_cfg(target_offset, generate_insights=gen_insights)
                 except ValueError:
                     self.console.print("[red]Enter a valid offset (decimal or 0xHEX).[/]")
             else:
