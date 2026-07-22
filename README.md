@@ -182,7 +182,7 @@ This will:
 1. Clone multiple curated cybersecurity datasets (DikeDataset, theZoo, vx-underground, Endermanch MalwareDatabase) inside the container
 2. **Incremental Extraction**: Skip files already cached in `dataset_cache.npz` and extract 30-dimensional features only from new files
 3. **Replay-Buffer Fine-Tuning**: Load the existing `threat_model_malconv.pt` weights and fine-tune using 100% of new data + a 10% replay buffer of old data to prevent catastrophic forgetting
-4. Train ThreatNet (PyTorch) and LightGBM models
+4. Train ThreatsNet (PyTorch) and LightGBM models
 5. Save `threat_model_malconv.pt`, `threat_model_lgb.txt` and `feature_scaler.npz` to your local project
 6. Destroy the container (and all malware) when done
 
@@ -211,7 +211,7 @@ FileAnalysis/
        capability_mapper.py  # MITRE ATT&CK mapping
     scoring/
        scorer.py             # Heuristic threat scorer
-       nn_model.py           # ThreatNet neural network
+       nn_model.py           # ThreatsNet neural network
        ml_model.py           # LightGBM tree model
        features.py           # 30-dim feature extraction
        sandbox_train.py      # Real malware training (Docker)

@@ -105,7 +105,7 @@ FileAnalysis/
      scoring/                # Threat scoring engines
         scorer.py           # Heuristic threat scorer
         features.py         # Feature extraction for ML models
-        nn_model.py         # ThreatNet MLP model + inference wrapper
+        nn_model.py         # ThreatsNet MLP model + inference wrapper
         ml_model.py         # LightGBM tree model + inference wrapper
         sandbox_train.py    # Real malware training (Docker)
         threat_model.pt     # Pre-trained NN weights
@@ -310,7 +310,7 @@ Normalization strategies:
 
 ### Model Architecture (`nn_model.py`)
 
-**ThreatNet** — a simple but effective MLP:
+**ThreatsNet** — a simple but effective MLP:
 
 ```
 Input (30) → Linear(64) → ReLU → Dropout(0.3)

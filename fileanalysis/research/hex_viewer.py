@@ -540,7 +540,7 @@ class HexViewer:
         page = 0
 
         # Banner
-        banner = pyfiglet.figlet_format("ThreatNet", font="slant")
+        banner = pyfiglet.figlet_format("ThreatsNet", font="slant")
         self.console.print(f"[bold red]\n{banner}[/]", justify="center")
         self.console.print("[bold cyan]  Binary Research Mode[/]\n", justify="center")
 

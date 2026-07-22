@@ -54,7 +54,7 @@ def cli(file_path: str, json_format: bool, research: bool, yara_rules: str | Non
     show_progress = not json_format  # suppress spinner for JSON output
 
     if show_progress:
-        ascii_text = pyfiglet.figlet_format("ThreatNet", font="slant")
+        ascii_text = pyfiglet.figlet_format("ThreatsNet", font="slant")
         console.print(f"[bold red]\n{ascii_text}[/]", justify="center")
 
     with Progress(
