@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import os
 import sys
+from pathlib import Path
 
 # Prevent OpenMP segmentation fault on macOS when LightGBM and PyTorch run in same process
 os.environ["KMP_DUPLICATE_LIB_OK"] = "TRUE"
@@ -13,6 +14,9 @@ import click
 import pyfiglet
 from rich.console import Console
 from rich.progress import Progress, SpinnerColumn, TextColumn, BarColumn, TaskProgressColumn
+from rich.prompt import Prompt
+from rich.panel import Panel
+from rich.table import Table
 
 from fileanalysis.analyzers.base import RiskLevel
 from fileanalysis.analyzers.dll_analyzer import DLLAnalyzer
@@ -34,28 +38,14 @@ from fileanalysis.scoring.nn_model import NNThreatScorer
 from fileanalysis.scoring.ml_model import LightGBMThreatScorer
 from fileanalysis.intelligence.ai_insights import AIInsightsGenerator
 
+console = Console(stderr=True)
 
-@click.command()
-@click.argument("file_path", type=click.Path(exists=True, dir_okay=False))
-@click.option("--json", "json_format", is_flag=True, help="Output results in JSON format.")
-@click.option("--research", is_flag=True, help="Open interactive hex viewer with binary annotations.")
-@click.option("--yara-rules", type=click.Path(file_okay=False), help="Custom directory containing YARA rules (.yar/.yara).")
-def cli(file_path: str, json_format: bool, research: bool, yara_rules: str | None) -> None:
-    """Analyze a file for malicious indicators, capabilities, and threat environment impact."""
-    console = Console(stderr=True)
-
-    # Research mode: launch interactive hex viewer and exit
-    if research:
-        from fileanalysis.research.hex_viewer import HexViewer
-        viewer = HexViewer(file_path)
-        viewer.run()
-        return
-
-    show_progress = not json_format  # suppress spinner for JSON output
+def run_analysis(file_path: str, json_format: bool, yara_rules: str | None) -> None:
+    """Run standard full scanning analysis."""
+    show_progress = not json_format
 
     if show_progress:
-        ascii_text = pyfiglet.figlet_format("ThreatsNet", font="slant")
-        console.print(f"[bold red]\n{ascii_text}[/]", justify="center")
+        console.print("[bold cyan]Starting file analysis...[/]", justify="center")
 
     with Progress(
         SpinnerColumn("dots"),
@@ -65,14 +55,13 @@ def cli(file_path: str, json_format: bool, research: bool, yara_rules: str | Non
         console=console,
         disable=not show_progress,
     ) as progress:
-
         # 1. Load file
         t_load = progress.add_task("📂 Loading file…", total=1)
         try:
             file_bytes, result = load_file(file_path)
         except Exception as e:
-            click.secho(f"[-] Error loading file: {e}", fg="red", err=True)
-            sys.exit(1)
+            console.print(f"[bold red][-] Error loading file: {e}[/]")
+            return
         progress.advance(t_load)
 
         # 2. Common analyzers
@@ -161,14 +150,10 @@ def cli(file_path: str, json_format: bool, research: bool, yara_rules: str | Non
             base_score = result.risk_score
             
         # Anti-False-Positive Filter
-        # Our ML models were primarily trained on PE/ELF binaries.
-        # They are prone to wildly overfitting on innocent PDFs, text files, and empty files.
         if result.metadata.file_type not in ["pe", "elf", "macho"]:
-            # For documents/scripts/generic files, heavily trust the heuristic
             if result.risk_score < 20.0:
                 base_score = min(base_score, 20.0)  # Cap at CLEAN
         else:
-            # For executables, if heuristic found absolutely zero suspicious capabilities or strings
             if result.risk_score < 10.0:
                 base_score = min(base_score, 40.0)  # Cap at LOW
 
@@ -195,7 +180,7 @@ def cli(file_path: str, json_format: bool, research: bool, yara_rules: str | Non
             pass
         progress.advance(t_ai)
 
-    # Render report (to stdout, after progress is cleared)
+    # Render report
     if json_format:
         json_data = JsonReporter().render(result)
         click.echo(json_data)
@@ -203,6 +188,122 @@ def cli(file_path: str, json_format: bool, research: bool, yara_rules: str | Non
         reporter = TerminalReporter()
         reporter.render(result)
 
+
+def interactive_menu():
+    """Run an interactive CLI menu."""
+    menu_console = Console()
+    loaded_files = []
+    error_msg = None
+    
+    while True:
+        # Clear screen for menu loop
+        menu_console.clear()
+        
+        # Print Banner
+        ascii_text = pyfiglet.figlet_format("ThreatsNet", font="slant")
+        menu_console.print(f"[bold red]{ascii_text}[/]", justify="center")
+        
+        if error_msg:
+            menu_console.print(f"[bold red]{error_msg}[/]", justify="center")
+            error_msg = None
+
+        
+        if loaded_files:
+            file_table = Table(title="[bold blue]Loaded Files[/]", show_header=True, header_style="bold magenta", expand=True)
+            file_table.add_column("Index", justify="right", style="cyan", no_wrap=True)
+            file_table.add_column("Path", style="white")
+            
+            for idx, f in enumerate(loaded_files):
+                file_table.add_row(str(idx + 1), f)
+            menu_console.print(file_table)
+            menu_console.print()
+        else:
+            menu_console.print("[dim italic]No files currently loaded.[/]\n", justify="center")
+        
+        # Build Table
+        menu_table = Table(show_header=False, box=None, padding=(0, 2))
+        menu_table.add_column("Key", style="bold green", justify="right")
+        menu_table.add_column("Action", style="bold white")
+        menu_table.add_column("Description", style="dim")
+        
+        menu_table.add_row("1.", "Standard File Analysis", "Run the full scanning pipeline with ML scoring, capabilities mapping, and YARA")
+        menu_table.add_row("2.", "Interactive Binary Research", "Open the hex viewer with disassembled code and threat annotations")
+        menu_table.add_row("3.", "Clear Files", "Remove all loaded files from the workspace")
+        menu_table.add_row("4.", "Quit", "Exit the application")
+        
+        # Build Panel
+        menu_panel = Panel(
+            menu_table,
+            title="[bold cyan]Interactive Console[/]",
+            border_style="cyan",
+            expand=False,
+            padding=(1, 2)
+        )
+        
+        menu_console.print(menu_panel, justify="center")
+
+        # Allow any input; choices parameter restricts it, so we don't use it.
+        choice = Prompt.ask("\n[bold yellow]Select an option or paste a file path to load[/]")
+
+        if choice == "4":
+            menu_console.print("[bold cyan]Exiting...[/]")
+            break
+            
+        elif choice == "3":
+            loaded_files.clear()
+            
+        elif choice in ["1", "2"]:
+            if not loaded_files:
+                menu_console.print("[bold red]No files loaded! Please paste a file path first.[/]")
+                Prompt.ask("\n[bold dim]Press Enter to continue...[/]")
+                continue
+                
+            selected_file = loaded_files[0]
+            if len(loaded_files) > 1:
+                file_idx = Prompt.ask(
+                    "\n[bold yellow]Select a file by index[/]",
+                    choices=[str(i+1) for i in range(len(loaded_files))]
+                )
+                selected_file = loaded_files[int(file_idx)-1]
+                
+            if choice == "1":
+                run_analysis(selected_file, json_format=False, yara_rules=None)
+                Prompt.ask("\n[bold dim]Press Enter to return to the main menu...[/]")
+            elif choice == "2":
+                from fileanalysis.research.hex_viewer import HexViewer
+                viewer = HexViewer(selected_file)
+                viewer.run()
+                
+        else:
+            # Not a recognized option number; try to load it as a file path
+            file_path = choice.strip("'\"")
+            if not os.path.exists(file_path):
+                error_msg = f"Invalid option or file not found: {file_path}"
+            elif not os.path.isfile(file_path):
+                error_msg = f"Not a file: {file_path}"
+            else:
+                if file_path not in loaded_files:
+                    loaded_files.append(file_path)
+
+
+@click.command()
+@click.argument("file_path", required=False, type=click.Path(exists=True, dir_okay=False))
+@click.option("--json", "json_format", is_flag=True, help="Output results in JSON format.")
+@click.option("--research", is_flag=True, help="Open interactive hex viewer with binary annotations.")
+@click.option("--yara-rules", type=click.Path(file_okay=False), help="Custom directory containing YARA rules (.yar/.yara).")
+def cli(file_path: str | None, json_format: bool, research: bool, yara_rules: str | None) -> None:
+    """Analyze a file for malicious indicators, capabilities, and threat environment impact."""
+    if not file_path:
+        # Interactive mode
+        interactive_menu()
+    else:
+        # One-shot CLI mode
+        if research:
+            from fileanalysis.research.hex_viewer import HexViewer
+            viewer = HexViewer(file_path)
+            viewer.run()
+        else:
+            run_analysis(file_path, json_format, yara_rules)
 
 if __name__ == "__main__":
     cli()

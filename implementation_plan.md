@@ -425,20 +425,36 @@ Serializes the entire `AnalysisResult` to JSON for programmatic consumption. Inc
 
 ---
 
-## CLI Interface
+## 10. CLI Interface
+
+The CLI offers two execution modes: **Interactive Workspace** and **One-Shot**.
+
+### Interactive Workspace Mode
+
+Running the tool without a file argument launches the **ThreatsNet Interactive Console**:
+
+```bash
+uv run python -m fileanalysis.cli
+```
+
+This acts as a persistent workspace. You can seamlessly load files by pasting their paths directly into the main prompt. The workspace tracks all loaded files in an index table. Once files are loaded, you can run the Standard File Analysis or Interactive Binary Research (Hex Viewer) on them.
+
+### One-Shot Mode
+
+For backward compatibility and scripting, passing a file path automatically bypasses the menu:
 
 ```bash
 # Basic scan
-fileanalysis scan suspicious.exe
+uv run python -m fileanalysis.cli suspicious.exe
 
 # JSON output
-fileanalysis scan suspicious.exe --json
+uv run python -m fileanalysis.cli suspicious.exe --json
+
+# Interactive binary research mode (Hex Viewer) directly
+uv run python -m fileanalysis.cli suspicious.exe --research
 
 # Custom YARA rules
-fileanalysis scan suspicious.exe --yara-rules /path/to/rules/
-
-# Combine flags
-fileanalysis scan suspicious.exe --json
+uv run python -m fileanalysis.cli suspicious.exe --yara-rules /path/to/rules/
 ```
 
 All flags:
@@ -446,6 +462,7 @@ All flags:
 | Flag | Description |
 |------|-------------|
 | `--json` | Output as JSON instead of Rich terminal |
+| `--research` | Open interactive hex viewer with binary annotations |
 | `--yara-rules DIR` | Custom YARA rules directory |
 
 ---

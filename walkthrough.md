@@ -1,5 +1,41 @@
-# Walkthrough: Sandboxed Malware Training
+# ThreatsNet Interactive CLI Menu & Binary Research Upgrades
 
+We have implemented an interactive, menu-driven command-line interface for the project and significantly upgraded the binary research capabilities with assembly disassembly and threat detection.
+
+## What's New
+
+### 1. Interactive Menu
+When you run the tool without any file arguments (`python -m fileanalysis.cli`), it now launches the **ThreatsNet Interactive Console**. 
+
+The console acts as a persistent workspace. You can seamlessly load files by pasting their paths directly into the main prompt. The workspace tracks all loaded files in an index table.
+
+Once you have files loaded, you can choose between:
+- **Standard File Analysis** (Full machine-learning & heuristic scan)
+- **Interactive Binary Research** (The interactive hex viewer)
+- **Clear Files** (Clear your workspace buffer)
+
+The console safely handles file paths with quotes and provides non-blocking, instant visual feedback for errors or successful loads without slowing you down with "Press Enter" prompts.
+
+> [!NOTE]
+> Backward compatibility is maintained. If you supply a file path argument (e.g. `python -m fileanalysis.cli my_malware.exe`), it automatically bypasses the menu and runs in one-shot mode as it did previously.
+
+### 2. Capstone Disassembly Engine
+The Hex Viewer now automatically detects if a binary is PE or ELF, determines the architecture (x86, x64, ARM64), and disassembles all executable code sections using the `capstone` library.
+
+When navigating through code sections in the hex viewer, a brand new **Assembly** column translates the raw hex into human-readable instructions in real-time.
+
+### 3. Assembly Threat Hunting
+The viewer actively hunts for malicious shellcode indicators and obfuscation tricks while you read the assembly:
+- Detects anti-debugging traps (`cpuid`, `rdtsc`, `int3`).
+- Detects process injection and dynamic API resolutions (indirect calls via RAX, RBX, memory).
+- Detects shellcode decoding loops and stack pivots (ROP chains).
+
+> [!WARNING]
+> If a malicious pattern is detected in the assembly, the instruction is highlighted in **bold red** and a threat label is attached to the annotation column (e.g. `⚠ Call-to-self (shellcode decoder)`).
+
+---
+
+# Walkthrough: Sandboxed Malware Training
 ## What Was Done
 
 Trained the `MalConv` neural network (on raw bytes) and `LightGBMThreatScorer` gradient boosting model on **real malware samples** from multiple datasets (DikeDataset, theZoo, vx-underground).

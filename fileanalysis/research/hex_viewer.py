@@ -534,15 +534,11 @@ class HexViewer:
 
     def run(self) -> None:
         """Launch the interactive paginated hex viewer."""
-        import pyfiglet
-
         total_pages = max(1, (len(self.data) + (self.ROWS_PER_PAGE * self.BYTES_PER_ROW) - 1) // (self.ROWS_PER_PAGE * self.BYTES_PER_ROW))
         page = 0
 
         # Banner
-        banner = pyfiglet.figlet_format("ThreatsNet", font="slant")
-        self.console.print(f"[bold red]\n{banner}[/]", justify="center")
-        self.console.print("[bold cyan]  Binary Research Mode[/]\n", justify="center")
+        self.console.print("\n[bold cyan]  Binary Research Mode[/]\n", justify="center")
 
         # Show annotation summary first
         self.console.print(self._render_summary())
@@ -559,7 +555,9 @@ class HexViewer:
             )
         )
 
-        while True:
+
+        run = True
+        while run:
             self.console.print()
             self.console.print(self._render_page(page))
             self.console.print()
@@ -568,11 +566,11 @@ class HexViewer:
                 cmd = input(f"[Page {page + 1}/{total_pages}] > ").strip().lower()
             except (EOFError, KeyboardInterrupt):
                 self.console.print("\n[bold]Exiting research mode.[/]")
-                break
+                run = False
 
             if cmd == "q" or cmd == "quit":
                 self.console.print("[bold]Exiting research mode.[/]")
-                break
+                run = False
             elif cmd == "" or cmd == "n":
                 # Next page
                 if page < total_pages - 1:

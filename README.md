@@ -21,7 +21,7 @@ pip install -r requirements.txt
 pip install torch>=2.0
 ```
 
-### 2. Scan a File
+### 2. Launch the Interactive Console
 
 > **Important:** You must run the command from the `FileAnalysis/` project root directory.
 
@@ -29,16 +29,41 @@ pip install torch>=2.0
 # Activate the virtual environment
 source .venv/bin/activate
 
-# Scan a file
-python -m fileanalysis.cli /path/to/suspicious/file.exe
+# Launch the interactive menu
+python -m fileanalysis.cli
 ```
 
-**Example:**
-```bash
-python -m fileanalysis.cli malware.exe
+This launches the **ThreatsNet Interactive Console**:
+```
+               ________                    __       _   __     __               
+              /_  __/ /_  ________  ____ _/ /______/ | / /__  / /_              
+               / / / __ \/ ___/ _ \/ __ `/ __/ ___/  |/ / _ \/ __/              
+               / / / / / / /  /  __/ /_/ / /_(__  ) /|  /  __/ /_               
+              /_/ /_/ /_/_/   \___/\__,_/\__/____/_/ |_/\___/\__/               
+                                                                                
+                                                                                
+                           No files currently loaded.                           
+                                                                                
+╭──────────────────────────── Interactive Console ─────────────────────────────╮
+│                                                                              │
+│    1.    Standard File Analysis         Run the full scanning pipeline       │
+│                                         with ML scoring, capabilities        │
+│                                         mapping, and YARA                    │
+│    2.    Interactive Binary Research    Open the hex viewer with             │
+│                                         disassembled code and threat         │
+│                                         annotations                          │
+│    3.    Clear Files                    Remove all loaded files from the     │
+│                                         workspace                            │
+│    4.    Quit                           Exit the application                 │
+│                                                                              │
+╰──────────────────────────────────────────────────────────────────────────────╯
+
+Select an option or paste a file path to load:
 ```
 
-**Output:**
+Paste a file path directly into the prompt to load it into your workspace, and then select an option to run analysis or research on it.
+
+### Example Output (Standard Scan)
 ```
 
   FileAnalysis — Malware Threat Report 
@@ -108,27 +133,29 @@ python -m fileanalysis.cli malware.exe
 
 ```
 
-### 3. CLI Options
+### 3. Advanced CLI Options (One-Shot Mode)
+
+You can bypass the interactive menu for scripting by providing the file path directly.
 
 | Flag | Description |
 |------|-------------|
 | `--json` | Output results as JSON |
-| `--research` | Open interactive hex viewer with binary annotations |
+| `--research` | Open interactive hex viewer directly |
 | `--yara-rules DIR` | Path to custom YARA rules directory |
 
 **Examples:**
 ```bash
+# Standard scan in one shot
+python -m fileanalysis.cli suspicious.exe
+
 # JSON output (for scripting)
 python -m fileanalysis.cli suspicious.exe --json
 
-# Interactive binary research mode
+# Interactive binary research mode directly
 python -m fileanalysis.cli suspicious.exe --research
 
 # Custom YARA rules
 python -m fileanalysis.cli suspicious.exe --yara-rules /path/to/rules/
-
-# Combine flags
-python -m fileanalysis.cli suspicious.exe --json
 ```
 
 ---
