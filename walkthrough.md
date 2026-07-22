@@ -33,6 +33,12 @@ The viewer actively hunts for malicious shellcode indicators and obfuscation tri
 > [!WARNING]
 > If a malicious pattern is detected in the assembly, the instruction is highlighted in **bold red** and a threat label is attached to the annotation column (e.g. `⚠ Call-to-self (shellcode decoder)`).
 
+### 4. Terminal-Native Control Flow Graph (CFG)
+You can now visualize the assembly execution paths directly within the terminal interface, avoiding the need for messy ASCII diagrams or external tools.
+- Press **c** (or type `c <offset>`) in the Hex Viewer to generate a sleek, hierarchical Control Flow Graph.
+- The CFG intelligently splits the code into Basic Blocks and renders them as `rich` panels linked by a beautiful tree layout.
+- Conditionals (True/False) and jumps are color-coded to instantly show you exactly where the malicious code leads.
+
 ---
 
 # Walkthrough: Sandboxed Malware Training

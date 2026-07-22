@@ -18,6 +18,9 @@ from rich.prompt import Prompt
 from rich.panel import Panel
 from rich.table import Table
 
+from prompt_toolkit import PromptSession
+from prompt_toolkit.key_binding import KeyBindings
+
 from fileanalysis.analyzers.base import RiskLevel
 from fileanalysis.analyzers.dll_analyzer import DLLAnalyzer
 from fileanalysis.analyzers.document_analyzer import DocumentAnalyzer
@@ -195,6 +198,32 @@ def interactive_menu():
     loaded_files = []
     error_msg = None
     
+    kb = KeyBindings()
+    
+    @kb.add("up")
+    def _(event):
+        b = event.app.current_buffer
+        if b.text in ["1", "2", "3", "4"]:
+            val = int(b.text)
+            b.text = str(max(1, val - 1))
+            b.cursor_position = len(b.text)
+        elif not b.text:
+            b.text = "4"
+            b.cursor_position = len(b.text)
+            
+    @kb.add("down")
+    def _(event):
+        b = event.app.current_buffer
+        if b.text in ["1", "2", "3", "4"]:
+            val = int(b.text)
+            b.text = str(min(4, val + 1))
+            b.cursor_position = len(b.text)
+        elif not b.text:
+            b.text = "1"
+            b.cursor_position = len(b.text)
+            
+    session = PromptSession(key_bindings=kb)
+    
     while True:
         # Clear screen for menu loop
         menu_console.clear()
@@ -243,7 +272,12 @@ def interactive_menu():
         menu_console.print(menu_panel, justify="center")
 
         # Allow any input; choices parameter restricts it, so we don't use it.
-        choice = Prompt.ask("\n[bold yellow]Select an option or paste a file path to load[/]")
+        menu_console.print("\n[bold yellow]Select an option (Up/Down) or paste a file path to load[/]")
+        try:
+            choice = session.prompt("> ").strip()
+        except (EOFError, KeyboardInterrupt):
+            menu_console.print("[bold cyan]Exiting...[/]")
+            break
 
         if choice == "4":
             menu_console.print("[bold cyan]Exiting...[/]")
@@ -254,8 +288,7 @@ def interactive_menu():
             
         elif choice in ["1", "2"]:
             if not loaded_files:
-                menu_console.print("[bold red]No files loaded! Please paste a file path first.[/]")
-                Prompt.ask("\n[bold dim]Press Enter to continue...[/]")
+                error_msg = "No files loaded! Please paste a file path first."
                 continue
                 
             selected_file = loaded_files[0]

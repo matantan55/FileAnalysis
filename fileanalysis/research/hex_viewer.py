@@ -12,6 +12,10 @@ from rich.console import Console
 from rich.table import Table
 from rich.text import Text
 from rich.panel import Panel
+from rich.tree import Tree
+
+from prompt_toolkit import PromptSession
+from prompt_toolkit.key_binding import KeyBindings
 
 
 # ─── Annotation Data ────────────────────────────────────────────────
@@ -231,6 +235,14 @@ class BinaryAnnotator:
                 i += 1
 
 
+from dataclasses import dataclass
+
+@dataclass
+class BasicBlock:
+    id_addr: int
+    instructions: list[tuple[int, str]]
+    successors: list[int]
+
 # ─── Disassembler Helper ───────────────────────────────────────────
 
 class Disassembler:
@@ -354,6 +366,88 @@ class Disassembler:
             if sec_off <= offset < sec_off + sec_size:
                 return True
         return False
+
+    def extract_cfg(self, start_offset: int, max_blocks: int = 15) -> list[BasicBlock]:
+        """Extract an intra-procedural CFG starting from start_offset."""
+        if not self.md or not self.is_code_offset(start_offset):
+            return []
+
+        self.md.detail = True
+        blocks = {}
+        queue = [start_offset]
+        seen = set()
+
+        while queue and len(blocks) < max_blocks:
+            current_addr = queue.pop(0)
+            if current_addr in seen:
+                continue
+            seen.add(current_addr)
+            
+            # Find which section we are in
+            sec_start, sec_size = 0, 0
+            for off, sz in self.code_sections:
+                if off <= current_addr < off + sz:
+                    sec_start, sec_size = off, sz
+                    break
+            
+            if not sec_start:
+                continue
+                
+            code_chunk = self.data[current_addr : sec_start + sec_size]
+            
+            block_insns = []
+            successors = []
+            block_addr = current_addr
+            
+            # Disassemble from current_addr
+            for insn in self.md.disasm(code_chunk, current_addr):
+                asm_str = f"{insn.mnemonic} {insn.op_str}".strip()
+                block_insns.append((insn.address, asm_str))
+                
+                # Check branch
+                is_jmp, is_call, is_ret = False, False, False
+                try:
+                    is_jmp = capstone.CS_GRP_JUMP in insn.groups
+                    is_call = capstone.CS_GRP_CALL in insn.groups
+                    is_ret = capstone.CS_GRP_RET in insn.groups
+                except capstone.CsError:
+                    pass
+                
+                if is_jmp or is_call or is_ret:
+                    target = None
+                    try:
+                        if insn.op_str.startswith("0x"):
+                            target = int(insn.op_str, 16)
+                    except ValueError:
+                        pass
+                        
+                    if is_jmp:
+                        # Conditional jumps have both target and fallthrough
+                        if insn.mnemonic != "jmp":
+                            fallthrough = insn.address + insn.size
+                            successors.append(fallthrough)
+                            if fallthrough not in seen and fallthrough not in queue:
+                                queue.append(fallthrough)
+                                
+                        if target:
+                            successors.append(target)
+                            if target not in seen and target not in queue:
+                                queue.append(target)
+                    
+                    elif is_call:
+                        # Treat call as sequential intra-procedural flow
+                        fallthrough = insn.address + insn.size
+                        successors.append(fallthrough)
+                        if fallthrough not in seen and fallthrough not in queue:
+                            queue.append(fallthrough)
+                            
+                    break
+                    
+            if block_insns:
+                blocks[block_addr] = BasicBlock(id_addr=block_addr, instructions=block_insns, successors=successors)
+                
+        self.md.detail = False
+        return list(blocks.values())
 
 
 # ─── Interactive Hex Viewer ─────────────────────────────────────────
@@ -532,10 +626,92 @@ class HexViewer:
             padding=(1, 2),
         )
 
+    def _render_cfg(self, start_offset: int) -> None:
+        """Extract and render a CFG for the assembly starting at start_offset."""
+        if not self.disasm.is_code_offset(start_offset):
+            self.console.print(f"[red]Error: Offset 0x{start_offset:X} is not within a code section.[/]")
+            input("\nPress Enter to continue...")
+            return
+
+        blocks = self.disasm.extract_cfg(start_offset, max_blocks=10)
+        if not blocks:
+            self.console.print(f"[red]No control flow graph could be extracted at 0x{start_offset:X}[/]")
+            input("\nPress Enter to continue...")
+            return
+            
+        block_map = {b.id_addr: b for b in blocks}
+
+        def build_tree(addr: int, tree_node: Tree, visited: set[int]):
+            if addr in visited:
+                tree_node.add(f"[dim]↳ Loop back to Block 0x{addr:X}[/]")
+                return
+            
+            if addr not in block_map:
+                tree_node.add(f"[dim]↳ External/Unknown: 0x{addr:X}[/]")
+                return
+                
+            visited.add(addr)
+            block = block_map[addr]
+            
+            insn_text = ""
+            for i_addr, asm in block.instructions:
+                threat = None
+                for match_fn, label in SUSPICIOUS_ASM_PATTERNS:
+                    try:
+                        parts = asm.split(None, 1)
+                        if match_fn(parts[0] if parts else "", parts[1] if len(parts) > 1 else ""):
+                            threat = label
+                            break
+                    except Exception: pass
+                    
+                if threat:
+                    insn_text += f"[red]0x{i_addr:X}: {asm:<30} ⚠ {threat}[/]\n"
+                else:
+                    insn_text += f"[cyan]0x{i_addr:X}:[/] {asm}\n"
+                    
+            panel = Panel(insn_text.strip(), title=f"[bold magenta]Block 0x{addr:X}[/]", border_style="magenta", expand=False)
+            node = tree_node.add(panel)
+            
+            for succ in block.successors:
+                if len(block.successors) > 1:
+                    if succ == block.successors[0]:
+                        edge_label = "[bold red]False (Fallthrough) ↳[/]"
+                    else:
+                        edge_label = "[bold green]True (Jump) ↳[/]"
+                else:
+                    edge_label = "[bold blue]↳[/]"
+                    
+                child_branch = node.add(edge_label)
+                build_tree(succ, child_branch, visited.copy())
+                
+        root_tree = Tree(f"[bold cyan]Control Flow Graph (Entry: 0x{start_offset:X})[/]")
+        build_tree(start_offset, root_tree, set())
+        
+        self.console.clear()
+        self.console.print(root_tree)
+        self.console.print("\n[dim]Note: Displaying up to 10 basic blocks for readability.[/]")
+        input("\nPress Enter to return to Hex Viewer...")
+
     def run(self) -> None:
         """Launch the interactive paginated hex viewer."""
         total_pages = max(1, (len(self.data) + (self.ROWS_PER_PAGE * self.BYTES_PER_ROW) - 1) // (self.ROWS_PER_PAGE * self.BYTES_PER_ROW))
         page = 0
+
+        kb = KeyBindings()
+        
+        @kb.add("left")
+        def _(event):
+            b = event.app.current_buffer
+            b.text = "p"
+            b.validate_and_handle()
+            
+        @kb.add("right")
+        def _(event):
+            b = event.app.current_buffer
+            b.text = "n"
+            b.validate_and_handle()
+            
+        session = PromptSession(key_bindings=kb)
 
         # Banner
         self.console.print("\n[bold cyan]  Binary Research Mode[/]\n", justify="center")
@@ -547,9 +723,9 @@ class HexViewer:
         # Controls help
         self.console.print(
             Panel(
-                "[bold]Enter[/] → Next page  |  [bold]p[/] → Previous page  |  "
-                "[bold]g <num>[/] → Go to page  |  [bold]s[/] → Jump to offset  |  "
-                "[bold]a[/] → Show annotations  |  [bold]q[/] → Quit",
+                "[bold]Enter / Right Arrow[/] → Next page  |  [bold]p / Left Arrow[/] → Previous page  |  "
+                "[bold]g <num>[/] → Go to page  |  [bold]s <num>[/] → Jump to offset\n"
+                "[bold]a[/] → Show annotations  |  [bold]c[/] / [bold]c <num>[/] → Show CFG  |  [bold]q[/] → Quit",
                 title="[bold]Controls[/]",
                 border_style="bright_black",
             )
@@ -563,7 +739,7 @@ class HexViewer:
             self.console.print()
 
             try:
-                cmd = input(f"[Page {page + 1}/{total_pages}] > ").strip().lower()
+                cmd = session.prompt(f"[Page {page + 1}/{total_pages}] > ").strip().lower()
             except (EOFError, KeyboardInterrupt):
                 self.console.print("\n[bold]Exiting research mode.[/]")
                 run = False
@@ -617,5 +793,28 @@ class HexViewer:
             elif cmd == "a":
                 # Show annotations summary again
                 self.console.print(self._render_summary())
+            elif cmd == "c" or cmd.startswith("c "):
+                # Extract and render CFG
+                try:
+                    parts = cmd.split(maxsplit=1)
+                    if len(parts) > 1:
+                        offset_str = parts[1]
+                        target_offset = int(offset_str, 16) if offset_str.startswith("0x") else int(offset_str)
+                    else:
+                        # Find the first executable code byte on the current page
+                        target_offset = None
+                        start_offset = page * self.ROWS_PER_PAGE * self.BYTES_PER_ROW
+                        end_offset = start_offset + (self.ROWS_PER_PAGE * self.BYTES_PER_ROW)
+                        for off in range(start_offset, end_offset):
+                            if self.disasm.is_code_offset(off):
+                                target_offset = off
+                                break
+                        if target_offset is None:
+                            self.console.print("[red]No executable code found on current page to graph. Supply an offset: c <offset>[/]")
+                            continue
+                            
+                    self._render_cfg(target_offset)
+                except ValueError:
+                    self.console.print("[red]Enter a valid offset (decimal or 0xHEX).[/]")
             else:
                 self.console.print("[dim]Unknown command. Press Enter for next page, 'q' to quit.[/]")
