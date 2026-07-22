@@ -10,6 +10,7 @@ os.environ["KMP_DUPLICATE_LIB_OK"] = "TRUE"
 os.environ["OMP_NUM_THREADS"] = "1"
 
 import click
+import pyfiglet
 from rich.console import Console
 from rich.progress import Progress, SpinnerColumn, TextColumn, BarColumn, TaskProgressColumn
 
@@ -42,6 +43,10 @@ def cli(file_path: str, json_format: bool, yara_rules: str | None) -> None:
     """Analyze a file for malicious indicators, capabilities, and threat environment impact."""
     console = Console(stderr=True)
     show_progress = not json_format  # suppress spinner for JSON output
+
+    if show_progress:
+        ascii_text = pyfiglet.figlet_format("ThreatNet", font="slant")
+        console.print(f"[bold red]\n{ascii_text}[/]", justify="center")
 
     with Progress(
         SpinnerColumn("dots"),

@@ -15,10 +15,11 @@ Requires-Dist: numpy>=1.24
 Requires-Dist: transformers>=4.0.0
 Requires-Dist: lightgbm>=4.0.0
 Requires-Dist: scikit-learn>=1.3.0
+Requires-Dist: pyfiglet>=1.0.4
 Provides-Extra: nn
 Requires-Dist: torch>=2.0; extra == "nn"
 
-# ⚡ FileAnalysis — Malware Threat Analysis Tool
+#  FileAnalysis — Malware Threat Analysis Tool
 
 A CLI-based malware file analysis and threat assessment tool that combines heuristic rules with a neural network trained on real malware samples.
 
@@ -55,31 +56,77 @@ python -m fileanalysis.cli /path/to/suspicious/file.exe
 
 **Example:**
 ```bash
-python -m fileanalysis.cli /usr/bin/zip
+python -m fileanalysis.cli malware.exe
 ```
 
 **Output:**
 ```
-╭─────────────────────────────────────────╮
-│ ⚡ FileAnalysis — Malware Threat Report │
-╰─────────────────────────────────────────╯
-📁 File: zip
-📊 Type: Java bytecode (application/java)
-📏 Size: 396.5 KB (405,984 bytes)
 
-╭───────────────────────────────────────────────────────────╮
-│ 📊 Heuristic: 19.5/100 — CLEAN                            │
-│ 🧠 Neural Net: 0.0/100 — CLEAN  (100.0% confident benign) │
-╰───────────────────────────────────────────────────────────╯
+  FileAnalysis — Malware Threat Report 
 
-🔒 File Hashes
-  MD5:    a2c7a2266a2d82193aa0a4cc3fbae24e
-  SHA-256: 0f01117851dbfb49407e3e06be5d4b9d...
+ File: malware.exe
+ Type: Windows Executable (application/vnd.microsoft.portable-executable)
+ Size: 11.8 MB (12,340,622 bytes)
+ Perms: rwxr-xr-x
 
-🔥 File Entropy: 5.5282/8.0
 
-🎯 Threat Capabilities
-  • Command & Control (T1071) — ...
+  Best Score (Ensemble): 77.1/100 — HIGH                         
+                                                                   
+  Heuristic: 64.0/100 — HIGH                                     
+  Neural Net: 100.0/100 — CRITICAL  (100.0% confident malicious) 
+  LightGBM: 78.8/100 — HIGH  (78.8% confident malicious)         
+
+
+  AI Executive Insights 
+ The model classified this file as malicious primarily due to: 
+ • YARA Signature Hits (Value: 3)                              
+ • Embedded URLs (Value: 0)                                    
+ • Windows Registry Keys (Value: 1)                            
+                                                               
+ Final ML Score: 78.8/100 (78.8% confidence)                   
+
+
+                                  File Hashes                                 
+
+ Type          Value                                                         
+
+ MD5           eb5b7c1d7a58bb6b3356b6933a122b78                              
+ SHA-1         bcb279c07bb56d554f7aadc12f598dfd36bbde4c                      
+ SHA-256       356396e17fb71952c99d0b5d470f4ed9c8cf513a82fc88bb77113842c664… 
+ ssdeep        196608:E27p7upumuzWnEAkaSqku/ByujxBvWWF4e00bx:FSKy4+kKymxBOW… 
+ imphash       b23a2bc43eb07e7fff1aeded8fe30126                              
+
+
+ File Entropy: 6.0108/8.0
+
+ Threat Capabilities
+  • Process Injection (T1055) — Injects malicious code into legitimate running processes to bypass detection.
+    ↳ Indicators: Suspicious Section
+  • Persistence (T1547.001) — Establishes mechanism to survive reboot/logoff.
+    ↳ APIs: RegSetValueExW
+    ↳ Indicators: Registry Key References
+  • Defense Evasion (T1027) — Obfuscates binary contents, disables security software, or detects analysis environments.
+    ↳ APIs: IsDebuggerPresent
+
+ Environment Impact
+  1. The file may actively evade antivirus scanners, virtual environments, or debugger utilities.
+  2. It can inject payloads into other running processes (like explorer.exe) to hijack system actions.
+  3. It establishes persistence (automatic restart) by writing run keys, creating background services, or installing startup jobs.
+
+                                 YARA Matches                                 
+
+ Rule Name                    Description                          Severity 
+
+ Shellcode_API_Hashing_ROR13  Detects ROR13 API hashing loop used  critical 
+                              by Metasploit and Cobalt Strike               
+                              shellcode                                     
+ Shellcode_Syscall_x86        Detects direct x86 system call       high     
+                              invocation (int 0x80, sysenter, int           
+                              0x2e)                                         
+ Shellcode_Heavens_Gate       Detects Heaven's Gate technique      critical 
+                              (32-bit to 64-bit mode switch to              
+                              bypass EDR hooks)                             
+
 ```
 
 ### 3. CLI Options
@@ -113,31 +160,33 @@ FileAnalysis runs a multi-stage pipeline on every file:
 1. **Load** — Reads the file, detects type (PE, ELF, Mach-O, script, document)
 2. **Analyze** — Runs format-specific analyzers (hashing, entropy, advanced strings including CVE/Registry patterns, imports, sections)
 3. **Intelligence** — YARA signature matching + MITRE ATT&CK capability mapping (e.g., Exploitation, Persistence)
-4. **Score** — Dual scoring with both heuristic rules and a neural network
+4. **Score** — Triple scoring with heuristic rules, a neural network, and a LightGBM decision tree model
 5. **Report** — Rich terminal output or JSON
 
 ### Dual Scoring System
 
-Every scan produces **two independent threat scores**:
+Every scan produces **independent threat scores** and an ensemble score:
 
 | Scorer | How it works |
 |--------|-------------|
-| **📊 Heuristic** | Hand-tuned weighted formula (entropy + strings + capabilities + YARA) |
-| **🧠 Neural Net** | 4-layer MLP trained on ~4,000 real malware/benign samples from multiple datasets (DikeDataset, theZoo, InQuest, PMAT, fabrimagic72) |
+| ** Heuristic** | Hand-tuned weighted formula (entropy + strings + capabilities + YARA) |
+| ** Neural Net** | 4-layer MLP trained on real malware/benign samples |
+| ** LightGBM** | Gradient boosting decision tree trained on the same feature set |
+| ** AI Insights** | Google Gemini LLM generates an executive summary of the primary threat vectors |
 
 ### Risk Levels
 
 | Score | Level | Meaning |
 |-------|-------|---------|
-| 0–20 | 🟢 CLEAN | No indicators found |
-| 21–40 | 🟡 LOW | Minor suspicious indicators |
-| 41–60 | 🟠 MODERATE | Multiple suspicious indicators |
-| 61–80 | 🔴 HIGH | Strong malware indicators |
-| 81–100 | ⛔ CRITICAL | Almost certainly malicious |
+| 0–20 | CLEAN | No indicators found |
+| 21–40 | LOW | Minor suspicious indicators |
+| 41–60 | MODERATE | Multiple suspicious indicators |
+| 61–80 | HIGH | Strong malware indicators |
+| 81–100 | CRITICAL | Almost certainly malicious |
 
 ---
 
-## Retraining the Neural Network
+## Retraining the Neural Network (Incremental Learning)
 
 The model can be retrained on real malware inside a **Docker sandbox** (no malware touches your local machine):
 
@@ -150,11 +199,12 @@ docker run --rm -v "$(pwd)":/workspace fileanalysis-sandbox
 ```
 
 This will:
-1. Clone multiple curated cybersecurity datasets (DikeDataset, theZoo, InQuest, PMAT, fabrimagic72) inside the container
-2. Extract 30-dimensional feature vectors from nearly 4,000 real files
-3. Train ThreatNet for 200 epochs
-4. Save `threat_model.pt` to your local project
-5. Destroy the container (and all malware) when done
+1. Clone multiple curated cybersecurity datasets (DikeDataset, theZoo, vx-underground, Endermanch MalwareDatabase) inside the container
+2. **Incremental Extraction**: Skip files already cached in `dataset_cache.npz` and extract 30-dimensional features only from new files
+3. **Replay-Buffer Fine-Tuning**: Load the existing `threat_model_malconv.pt` weights and fine-tune using 100% of new data + a 10% replay buffer of old data to prevent catastrophic forgetting
+4. Train ThreatNet (PyTorch) and LightGBM models
+5. Save `threat_model_malconv.pt`, `threat_model_lgb.txt` and `feature_scaler.npz` to your local project
+6. Destroy the container (and all malware) when done
 
 ---
 
@@ -162,36 +212,37 @@ This will:
 
 ```
 FileAnalysis/
-├── fileanalysis/
-│   ├── cli.py                    # Main CLI entry point
-│   ├── loader.py                 # File loading & type detection
-│   ├── analyzers/                # Format-specific analyzers
-│   │   ├── base.py               # AnalysisResult data structure
-│   │   ├── entropy.py            # Entropy analysis
-│   │   ├── hashing.py            # Cryptographic hashing
-│   │   ├── strings.py            # String extraction & categorization
-│   │   ├── pe_analyzer.py        # Windows PE analysis
-│   │   ├── elf_analyzer.py       # Linux ELF analysis
-│   │   ├── macho_analyzer.py     # macOS Mach-O analysis
-│   │   ├── script_analyzer.py    # Script file analysis
-│   │   ├── document_analyzer.py  # Document file analysis
-│   │   └── dll_analyzer.py       # DLL-specific analysis
-│   ├── intelligence/
-│   │   ├── yara_scanner.py       # YARA rule matching
-│   │   └── capability_mapper.py  # MITRE ATT&CK mapping
-│   ├── scoring/
-│   │   ├── scorer.py             # Heuristic threat scorer
-│   │   ├── nn_model.py           # ThreatNet neural network
-│   │   ├── features.py           # 30-dim feature extraction
-│   │   ├── train.py              # Synthetic data training
-│   │   ├── sandbox_train.py      # Real malware training (Docker)
-│   │   └── threat_model.pt       # Trained model weights
-│   └── reporting/
-│       ├── terminal_report.py    # Rich terminal output
-│       └── json_report.py        # JSON output
-├── Dockerfile.sandbox            # Docker sandbox for safe training
-├── requirements.txt              # Python dependencies
-└── pyproject.toml                # Project configuration
+ fileanalysis/
+    cli.py                    # Main CLI entry point
+    loader.py                 # File loading & type detection
+    analyzers/                # Format-specific analyzers
+       base.py               # AnalysisResult data structure
+       entropy.py            # Entropy analysis
+       hashing.py            # Cryptographic hashing
+       strings.py            # String extraction & categorization
+       pe_analyzer.py        # Windows PE analysis
+       elf_analyzer.py       # Linux ELF analysis
+       macho_analyzer.py     # macOS Mach-O analysis
+       script_analyzer.py    # Script file analysis
+       document_analyzer.py  # Document file analysis
+       dll_analyzer.py       # DLL-specific analysis
+    intelligence/
+       yara_scanner.py       # YARA rule matching
+       capability_mapper.py  # MITRE ATT&CK mapping
+    scoring/
+       scorer.py             # Heuristic threat scorer
+       nn_model.py           # ThreatNet neural network
+       ml_model.py           # LightGBM tree model
+       features.py           # 30-dim feature extraction
+       sandbox_train.py      # Real malware training (Docker)
+       threat_model.pt       # Trained NN weights
+       threat_model_lgb.txt  # Trained LightGBM weights
+    reporting/
+        terminal_report.py    # Rich terminal output
+        json_report.py        # JSON output
+ Dockerfile.sandbox            # Docker sandbox for safe training
+ requirements.txt              # Python dependencies
+ pyproject.toml                # Project configuration
 ```
 
 ---
@@ -218,8 +269,8 @@ See [LICENSE](LICENSE) for details.
 
 ## Cloud Integration & CI/CD
 
-To ensure the neural network continually stays ahead of zero-day threats, the entire training and release lifecycle is fully automated using **AWS S3** and **GitHub Actions**:
+To ensure the neural network continually stays ahead of zero-day threats, the entire training and release lifecycle is fully automated using **GitHub Actions**:
 
-- **Continuous Model Retraining**: A GitHub Actions workflow (`.github/workflows/daily-training.yml`) automatically triggers the Docker sandbox training pipeline every day at midnight UTC.
-- **AWS S3 Caching**: The training pipeline uses `boto3` to communicate with AWS S3 (`AWS_S3_BUCKET`). It automatically downloads pre-computed dataset features (`dataset_cache.npz`) to skip the massive repository cloning and extraction phases, saving substantial compute time. If new data is extracted, the script automatically updates the cache in S3.
-- **Automated Versioning & Releases**: Upon a successful nightly run, if the model weights (`threat_model.pt`) have improved/changed, the CI/CD pipeline automatically commits the updates back to the `main` branch and publishes a new versioned GitHub Release.
+- **Continuous Model Retraining**: A GitHub Actions workflow (`.github/workflows/training.yml`) automatically triggers the Docker sandbox training pipeline using `workflow_dispatch` or pushes with `--train`.
+- **Incremental Dataset Caching**: The training pipeline uses the `actions/cache` GitHub action to persist and automatically download pre-computed dataset features (`dataset_cache.npz`) between runs. This skips the massive repository cloning and extraction phases for already processed files, extracting features only for newly pushed malware.
+- **Automated Versioning & Releases**: Upon a successful run, if the model weights (`threat_model_malconv.pt`) have improved/changed, the CI/CD pipeline automatically commits the updates back to the `main` branch and publishes a new versioned GitHub Release.
