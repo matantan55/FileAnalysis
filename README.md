@@ -113,7 +113,7 @@ python -m fileanalysis.cli malware.exe
 | Flag | Description |
 |------|-------------|
 | `--json` | Output results as JSON |
-
+| `--research` | Open interactive hex viewer with binary annotations |
 | `--yara-rules DIR` | Path to custom YARA rules directory |
 
 **Examples:**
@@ -121,7 +121,8 @@ python -m fileanalysis.cli malware.exe
 # JSON output (for scripting)
 python -m fileanalysis.cli suspicious.exe --json
 
-
+# Interactive binary research mode
+python -m fileanalysis.cli suspicious.exe --research
 
 # Custom YARA rules
 python -m fileanalysis.cli suspicious.exe --yara-rules /path/to/rules/

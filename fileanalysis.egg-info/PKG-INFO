@@ -16,6 +16,7 @@ Requires-Dist: transformers>=4.0.0
 Requires-Dist: lightgbm>=4.0.0
 Requires-Dist: scikit-learn>=1.3.0
 Requires-Dist: pyfiglet>=1.0.4
+Requires-Dist: capstone>=5.0.9
 Provides-Extra: nn
 Requires-Dist: torch>=2.0; extra == "nn"
 
@@ -134,7 +135,7 @@ python -m fileanalysis.cli malware.exe
 | Flag | Description |
 |------|-------------|
 | `--json` | Output results as JSON |
-
+| `--research` | Open interactive hex viewer with binary annotations |
 | `--yara-rules DIR` | Path to custom YARA rules directory |
 
 **Examples:**
@@ -142,7 +143,8 @@ python -m fileanalysis.cli malware.exe
 # JSON output (for scripting)
 python -m fileanalysis.cli suspicious.exe --json
 
-
+# Interactive binary research mode
+python -m fileanalysis.cli suspicious.exe --research
 
 # Custom YARA rules
 python -m fileanalysis.cli suspicious.exe --yara-rules /path/to/rules/

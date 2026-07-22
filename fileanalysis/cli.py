@@ -38,10 +38,19 @@ from fileanalysis.intelligence.ai_insights import AIInsightsGenerator
 @click.command()
 @click.argument("file_path", type=click.Path(exists=True, dir_okay=False))
 @click.option("--json", "json_format", is_flag=True, help="Output results in JSON format.")
+@click.option("--research", is_flag=True, help="Open interactive hex viewer with binary annotations.")
 @click.option("--yara-rules", type=click.Path(file_okay=False), help="Custom directory containing YARA rules (.yar/.yara).")
-def cli(file_path: str, json_format: bool, yara_rules: str | None) -> None:
+def cli(file_path: str, json_format: bool, research: bool, yara_rules: str | None) -> None:
     """Analyze a file for malicious indicators, capabilities, and threat environment impact."""
     console = Console(stderr=True)
+
+    # Research mode: launch interactive hex viewer and exit
+    if research:
+        from fileanalysis.research.hex_viewer import HexViewer
+        viewer = HexViewer(file_path)
+        viewer.run()
+        return
+
     show_progress = not json_format  # suppress spinner for JSON output
 
     if show_progress:
