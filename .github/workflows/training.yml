@@ -1,4 +1,4 @@
-name: ThreatsNet Training
+name: FileOwn Training
 
 on:
   push:
@@ -56,7 +56,7 @@ jobs:
           git config --local user.email "github-actions[bot]@users.noreply.github.com"
           git config --local user.name "github-actions[bot]"
           git add fileanalysis/scoring/threat_model_malconv.pt fileanalysis/scoring/threat_model_lgb.txt fileanalysis/scoring/feature_scaler.npz
-          git commit -m "🤖 Automate ThreatsNet model retraining"
+          git commit -m "🤖 Automate FileOwn model retraining"
           git push
 
       - name: Create GitHub Release
@@ -69,6 +69,6 @@ jobs:
           RELEASE_TAG="${DATE_TAG}.${{ github.run_number }}"
           
           gh release create "$RELEASE_TAG" \
-            --title "ThreatsNet Model Release $RELEASE_TAG" \
-            --notes "Automated ThreatsNet retraining run on aggregated malware datasets." \
+            --title "FileOwn Model Release $RELEASE_TAG" \
+            --notes "Automated FileOwn retraining run on aggregated malware datasets." \
             fileanalysis/scoring/threat_model_malconv.pt fileanalysis/scoring/threat_model_lgb.txt fileanalysis/scoring/feature_scaler.npz

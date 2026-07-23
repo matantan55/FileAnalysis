@@ -56,13 +56,13 @@ source .venv/bin/activate
 python -m fileanalysis.cli
 ```
 
-This launches the **ThreatsNet Interactive Console**:
+This launches the **MalOwn Interactive Console**:
 ```
-               ________                    __       _   __     __               
-              /_  __/ /_  ________  ____ _/ /______/ | / /__  / /_              
-               / / / __ \/ ___/ _ \/ __ `/ __/ ___/  |/ / _ \/ __/              
-               / / / / / / /  /  __/ /_/ / /_(__  ) /|  /  __/ /_               
-              /_/ /_/ /_/_/   \___/\__,_/\__/____/_/ |_/\___/\__/               
+                  __  ___      ______               
+                 /  |/  /___ _/ / __ \_      ______ 
+                / /|_/ / __ `/ / / / / | /| / / __ \
+               / /  / / /_/ / / /_/ /| |/ |/ / / / /
+              /_/  /_/\__,_/_/\____/ |__/|__/_/ /_/ 
                                                                                 
                                                                                 
                            No files currently loaded.                           
@@ -232,7 +232,7 @@ This will:
 1. Clone multiple curated cybersecurity datasets (DikeDataset, theZoo, vx-underground, Endermanch MalwareDatabase) inside the container
 2. **Incremental Extraction**: Skip files already cached in `dataset_cache.npz` and extract 30-dimensional features only from new files
 3. **Replay-Buffer Fine-Tuning**: Load the existing `threat_model_malconv.pt` weights and fine-tune using 100% of new data + a 10% replay buffer of old data to prevent catastrophic forgetting
-4. Train ThreatsNet (PyTorch) and LightGBM models
+4. Train MalOwn (PyTorch) and LightGBM models
 5. Save `threat_model_malconv.pt`, `threat_model_lgb.txt` and `feature_scaler.npz` to your local project
 6. Destroy the container (and all malware) when done
 
@@ -261,7 +261,7 @@ FileAnalysis/
        capability_mapper.py  # MITRE ATT&CK mapping
     scoring/
        scorer.py             # Heuristic threat scorer
-       nn_model.py           # ThreatsNet neural network
+       nn_model.py           # MalOwn neural network
        ml_model.py           # LightGBM tree model
        features.py           # 30-dim feature extraction
        sandbox_train.py      # Real malware training (Docker)

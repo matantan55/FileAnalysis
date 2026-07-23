@@ -1,11 +1,11 @@
-# ThreatsNet Interactive CLI Menu & Binary Research Upgrades
+# MalOwn Interactive CLI Menu & Binary Research Upgrades
 
 We have implemented an interactive, menu-driven command-line interface for the project and significantly upgraded the binary research capabilities with assembly disassembly and threat detection.
 
 ## What's New
 
 ### 1. Interactive Menu
-When you run the tool without any file arguments (`python -m fileanalysis.cli`), it now launches the **ThreatsNet Interactive Console**. 
+When you run the tool without any file arguments (`python -m fileanalysis.cli`), it now launches the **MalOwn Interactive Console**. 
 
 The console acts as a persistent workspace. You can seamlessly load files by pasting their paths directly into the main prompt. The workspace tracks all loaded files in an index table.
 

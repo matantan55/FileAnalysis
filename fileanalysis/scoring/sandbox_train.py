@@ -381,7 +381,7 @@ def collect_files(directory: Path, max_files: int = 10000) -> list[Path]:
 # Training
 # 
 def main():
-    console.rule("[bold cyan] ThreatsNet Multi-Dataset Training[/]")
+    console.rule("[bold cyan] MalOwn Multi-Dataset Training[/]")
 
     cache_file = "dataset_cache.npz"
     local_cache_path = Path("/workspace") / cache_file

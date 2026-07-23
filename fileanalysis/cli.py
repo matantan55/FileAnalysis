@@ -229,7 +229,7 @@ def interactive_menu():
         menu_console.clear()
         
         # Print Banner
-        ascii_text = pyfiglet.figlet_format("ThreatsNet", font="slant")
+        ascii_text = pyfiglet.figlet_format("MalOwn", font="slant")
         menu_console.print(f"[bold red]{ascii_text}[/]", justify="center")
         
         if error_msg:
