@@ -97,29 +97,33 @@ SUSPICIOUS_ASM_PATTERNS: list[tuple[callable, str]] = [
     (lambda m, o: m == "sysenter",                       "Sysenter (evasion / shellcode)"),
     (lambda m, o: m == "int" and "0x80" in o,            "Linux syscall via int 0x80"),
     (lambda m, o: m == "int" and "0x2e" in o,            "NT syscall via int 0x2e"),
-    (lambda m, o: m == "int3" or (m == "int" and "3" in o), "INT3 breakpoint (anti-debug)"),
+    (lambda m, o: m in ("int3", "icebp") or (m == "int" and o in ("3", "0x3", "0x2d", "2d", "45", "0x2d")), "Software breakpoint / exception (anti-debug)"),
     # Anti-debugging / anti-VM
     (lambda m, o: m == "cpuid",                          "CPUID (VM / sandbox detection)"),
-    (lambda m, o: m == "rdtsc",                          "RDTSC (timing-based anti-debug)"),
-    (lambda m, o: m == "rdtscp",                         "RDTSCP (timing-based anti-debug)"),
+    (lambda m, o: m in ("rdtsc", "rdtscp"),              "RDTSC (timing-based anti-debug)"),
     (lambda m, o: m in ("sidt", "sgdt", "sldt", "str"),  "Privileged table read (VM detection)"),
+    (lambda m, o: m == "in" and "eax" in o and "dx" in o, "I/O Port read (VMware backdoor detect)"),
     # Self-modifying / shellcode tricks
     (lambda m, o: m == "call" and o.startswith("0x") and abs(int(o, 16)) < 0x10, "Call-to-self (shellcode decoder)"),
-    (lambda m, o: m == "xor" and len(o.split(",")) == 2 and o.split(",")[0].strip() == o.split(",")[1].strip(), "XOR reg, reg (zeroing / decode loop)"),
-    # Process injection patterns
-    (lambda m, o: m == "call" and "rax" in o,            "Indirect call via RAX (dynamic API)"),
-    (lambda m, o: m == "call" and "rbx" in o,            "Indirect call via RBX (dynamic API)"),
-    (lambda m, o: m == "call" and "r10" in o,            "Indirect call via R10 (dynamic API)"),
-    (lambda m, o: m == "call" and "r11" in o,            "Indirect call via R11 (dynamic API)"),
-    (lambda m, o: m == "jmp" and "rax" in o,             "Indirect jump via RAX (dynamic dispatch)"),
-    (lambda m, o: m == "jmp" and "qword ptr" in o,       "Indirect jump via memory (IAT/hook)"),
-    (lambda m, o: m == "call" and "qword ptr" in o,      "Indirect call via memory (IAT/hook)"),
+    (lambda m, o: m in ("pushad", "popad", "pushal", "popal"), "Save/Restore all registers (Packer stub)"),
+    (lambda m, o: m in ("ror", "rol") and o.endswith(("0xd", "13")), "Bitwise rotation by 13 (API Hashing)"),
+    # API Resolution (PEB/TEB access)
+    (lambda m, o: "fs:" in o and ("0x30" in o or "48" in o), "FS:0x30 PEB access (API resolution)"),
+    (lambda m, o: "gs:" in o and ("0x60" in o or "96" in o), "GS:0x60 PEB access (API resolution)"),
     # Stack pivoting / ROP
-    (lambda m, o: m == "xchg" and "esp" in o,            "Stack pivot (ROP chain setup)"),
-    (lambda m, o: m == "xchg" and "rsp" in o,            "Stack pivot (ROP chain setup)"),
+    (lambda m, o: m == "xchg" and ("esp" in o or "rsp" in o), "Stack pivot (ROP chain setup)"),
     # Heaven's Gate
     (lambda m, o: m == "retf",                           "Far return (Heaven's Gate / mode switch)"),
     (lambda m, o: m == "ljmp" or (m == "jmp" and "far" in o), "Far jump (Heaven's Gate / mode switch)"),
+    # EFLAGS / Trap Flag Manipulation (Anti-Debugging)
+    (lambda m, o: m in ("pushfd", "pushfq", "popfd", "popfq"), "EFLAGS manipulation (Trap Flag anti-debug)"),
+    # Anti-Disassembly / Obfuscation
+    (lambda m, o: m in ("stc", "clc"), "Carry flag manipulation (Anti-disassembly trick)"),
+    # Advanced PEB/TEB access
+    (lambda m, o: "fs:" in o and ("0x18" in o or "24" in o), "FS:0x18 TEB access (API resolution)"),
+    (lambda m, o: "gs:" in o and ("0x30" in o or "48" in o), "GS:0x30 TEB access (API resolution)"),
+    # Execution Delay / Spinlocks
+    (lambda m, o: m == "pause", "PAUSE instruction (Spin-loop / Sandbox evasion)"),
 ]
 
 

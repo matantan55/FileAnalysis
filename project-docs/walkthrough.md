@@ -33,6 +33,16 @@ The viewer actively hunts for malicious shellcode indicators and obfuscation tri
 > [!WARNING]
 > If a malicious pattern is detected in the assembly, the instruction is highlighted in **bold red** and a threat label is attached to the annotation column (e.g. `⚠ Call-to-self (shellcode decoder)`).
 
+**Threat Annotation Refinements:**
+The hex viewer's underlying assembly heuristic engine (`SUSPICIOUS_ASM_PATTERNS`) has been entirely overhauled to drastically reduce false positives and catch highly advanced evasion techniques:
+- **Removed Overly Broad Heuristics**: Standard C/C++ compiler behaviors like `call rax` (virtual functions) or `call qword ptr` (Windows IAT resolution) have been removed, preventing benign code from being flooded with red threat flags.
+- **Added Advanced Indicators**: High-fidelity detection patterns were added for:
+  - **API Resolution**: Manual resolution via the PEB/TEB (`fs:0x30`, `gs:0x60`, `fs:0x18`, `gs:0x30`) and API hashing (`ror 13`).
+  - **Anti-Debugging**: Exceptions (`icebp`, `int 2d`) and Trap Flag manipulation (`pushfd`/`popfd`).
+  - **Anti-Disassembly**: Carry flag manipulation (`stc`/`clc`).
+  - **VM Evasion**: VMware backdoor detection (`in eax, dx`) and sandbox stalling (`pause`).
+  - **Packer Stubs**: State preservation (`pushad`/`popad`).
+
 ### 4. Terminal-Native Control Flow Graph (CFG)
 You can now visualize the assembly execution paths directly within the terminal interface, avoiding the need for messy ASCII diagrams or external tools.
 - Press **c** (or type `c <offset>`) in the Hex Viewer to generate a sleek, hierarchical Control Flow Graph.
