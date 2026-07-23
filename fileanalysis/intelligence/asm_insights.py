@@ -80,3 +80,55 @@ class ASMInsightsGenerator:
         
         response = self.tokenizer.batch_decode(generated_ids, skip_special_tokens=True)[0]
         return response.strip()
+
+    def generate_behavioral_mapping(self, all_blocks_asm: list[str]) -> str:
+        """Generate a short behavioral summary of the entire CFG."""
+        self._load_model()
+
+        combined = "\n---\n".join(all_blocks_asm)
+        # Truncate if too long for the model context window
+        if len(combined) > 2000:
+            combined = combined[:2000] + "\n... (truncated)"
+
+        prompt = (
+            "You are an expert malware reverse engineer analyzing a binary's control flow graph. "
+            "The following are basic blocks from a single function. "
+            "Identify the CONCRETE high-level behavior of this function in 2-3 sentences. "
+            "Be specific. Good examples: "
+            "'Dynamically resolves API addresses via GetProcAddress from a hashed import table', "
+            "'XOR-decrypts an embedded string using a rolling single-byte key at 0x41', "
+            "'Opens a TCP socket to a remote host and sends an initial beacon packet', "
+            "'Enumerates running processes via NtQuerySystemInformation looking for debuggers'. "
+            "Bad examples: 'This code moves values between registers', 'This code has conditional jumps'.\n\n"
+            f"```assembly\n{combined}\n```"
+        )
+
+        messages = [
+            {"role": "system", "content": "You are a concise and direct reverse engineering assistant. Do not use filler text."},
+            {"role": "user", "content": prompt}
+        ]
+
+        text = self.tokenizer.apply_chat_template(
+            messages,
+            tokenize=False,
+            add_generation_prompt=True
+        )
+
+        model_inputs = self.tokenizer([text], return_tensors="pt").to(self.model.device)
+
+        with torch.no_grad():
+            generated_ids = self.model.generate(
+                **model_inputs,
+                max_new_tokens=200,
+                temperature=0.2,
+                do_sample=True,
+                pad_token_id=self.tokenizer.eos_token_id
+            )
+
+        generated_ids = [
+            output_ids[len(input_ids):]
+            for input_ids, output_ids in zip(model_inputs.input_ids, generated_ids)
+        ]
+
+        response = self.tokenizer.batch_decode(generated_ids, skip_special_tokens=True)[0]
+        return response.strip()

@@ -274,12 +274,12 @@ def interactive_menu():
         # Allow any input; choices parameter restricts it, so we don't use it.
         menu_console.print("\n[bold yellow]Select an option (Up/Down) or paste a file path to load[/]")
         try:
-            choice = session.prompt("> ").strip()
+            choice = session.prompt("> ").strip().lower()
         except (EOFError, KeyboardInterrupt):
             menu_console.print("[bold cyan]Exiting...[/]")
             break
 
-        if choice == "4":
+        if choice in ["4", "q", "quit"]:
             menu_console.print("[bold cyan]Exiting...[/]")
             break
             

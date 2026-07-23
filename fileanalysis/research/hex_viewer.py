@@ -3,15 +3,29 @@
 
 from __future__ import annotations
 
+import sys
 import struct
+import tty
+import termios
 from dataclasses import dataclass
 from pathlib import Path
 
 import capstone
-from rich.console import Console
+from rich.console import Console, Group
+from rich.layout import Layout
+from rich.live import Live
+from rich.panel import Panel
+from rich.progress import (
+    Progress,
+    SpinnerColumn,
+    TextColumn,
+    BarColumn,
+    TaskProgressColumn,
+    TimeElapsedColumn,
+    TimeRemainingColumn,
+)
 from rich.table import Table
 from rich.text import Text
-from rich.panel import Panel
 from rich.tree import Tree
 
 from prompt_toolkit import PromptSession
@@ -656,27 +670,29 @@ class HexViewer:
             padding=(1, 2),
         )
 
-    def _render_cfg(self, start_offset: int, generate_insights: bool = False) -> None:
+    def _render_cfg(self, start_offset: int, generate_insights: bool = False, max_blocks: int = 10) -> None:
         """Extract and render a CFG for the assembly starting at start_offset."""
         if not self.disasm.is_code_offset(start_offset):
             self.console.print(f"[red]Error: Offset 0x{start_offset:X} is not within a code section.[/]")
             input("\nPress Enter to continue...")
             return
 
-        blocks = self.disasm.extract_cfg(start_offset, max_blocks=10)
+        blocks = self.disasm.extract_cfg(start_offset, max_blocks=max_blocks)
         if not blocks:
             self.console.print(f"[red]No control flow graph could be extracted at 0x{start_offset:X}[/]")
             input("\nPress Enter to continue...")
             return
-            
-        insights_map = {}
+
+        insights_map: dict[int, str] = {}
+        behavioral_mapping: str | None = None
+
         if generate_insights:
             if not hasattr(self, '_ai_engine'):
                 self.console.print("[dim]Loading AI model for insights (this may take a moment)...[/]")
                 self._ai_engine = ASMInsightsGenerator()
-                
-            from rich.progress import Progress, SpinnerColumn, TextColumn, BarColumn, TaskProgressColumn, TimeElapsedColumn, TimeRemainingColumn
-            
+
+            total_steps = len(blocks)
+
             with Progress(
                 SpinnerColumn(),
                 TextColumn("[progress.description]{task.description}"),
@@ -685,74 +701,323 @@ class HexViewer:
                 TimeElapsedColumn(),
                 TimeRemainingColumn(),
                 console=self.console,
-                transient=True
+                transient=True,
             ) as progress:
-                task = progress.add_task("[cyan]Generating AI Assembly Insights...", total=len(blocks))
+                task = progress.add_task(
+                    "[cyan]Generating AI Assembly Insights...", total=total_steps
+                )
+
                 for block in blocks:
-                    block_asm = "\n".join([f"0x{a:X}: {i}" for a, i in block.instructions])
+                    block_asm = "\n".join(
+                        [f"0x{a:X}: {i}" for a, i in block.instructions]
+                    )
                     try:
-                        insights_map[block.id_addr] = self._ai_engine.generate_insight(block_asm)
+                        insights_map[block.id_addr] = (
+                            self._ai_engine.generate_insight(block_asm)
+                        )
                     except Exception as e:
-                        insights_map[block.id_addr] = f"Error generating insight: {e}"
+                        insights_map[block.id_addr] = f"Error: {e}"
                     progress.advance(task)
 
-        block_map = {b.id_addr: b for b in blocks}
+        self._interactive_cfg_viewer(blocks, insights_map)
 
-        def build_tree(addr: int, tree_node: Tree, visited: set[int]):
-            if addr in visited:
-                tree_node.add(f"[dim]↳ Loop back to Block 0x{addr:X}[/]")
-                return
-            
-            if addr not in block_map:
-                tree_node.add(f"[dim]↳ External/Unknown: 0x{addr:X}[/]")
-                return
+    # ── Helpers for the interactive CFG viewer ──────────────────────
+
+    @staticmethod
+    def _read_key() -> str:
+        """Read a single keypress from stdin in raw mode."""
+        fd = sys.stdin.fileno()
+        old_settings = termios.tcgetattr(fd)
+        try:
+            tty.setraw(fd)
+            ch = sys.stdin.read(1)
+            if ch == '\x1b':  # Escape sequence (arrow keys, etc.)
+                ch2 = sys.stdin.read(1)
+                if ch2 == '[':
+                    ch3 = sys.stdin.read(1)
+                    if ch3 == 'A':
+                        return 'up'
+                    if ch3 == 'B':
+                        return 'down'
+                    if ch3 == 'C':
+                        return 'right'
+                    if ch3 == 'D':
+                        return 'left'
+                return 'escape'
+            if ch == '\x03':  # Ctrl-C
+                return 'q'
+            if ch in ('q', 'Q'):
+                return 'q'
+            if ch in ('\r', '\n'):
+                return 'enter'
+            return ch
+        finally:
+            termios.tcsetattr(fd, termios.TCSADRAIN, old_settings)
+
+    @staticmethod
+    def _block_has_threat(block: BasicBlock) -> bool:
+        """Return True if any instruction in the block matches a suspicious pattern."""
+        for _, asm in block.instructions:
+            parts = asm.split(None, 1)
+            mnemonic = parts[0] if parts else ""
+            op_str = parts[1] if len(parts) > 1 else ""
+            for match_fn, _ in SUSPICIOUS_ASM_PATTERNS:
+                try:
+                    if match_fn(mnemonic, op_str):
+                        return True
+                except Exception:
+                    pass
+        return False
+
+    def _interactive_cfg_viewer(
+        self,
+        blocks: list[BasicBlock],
+        insights_map: dict[int, str],
+    ) -> None:
+        """Full-screen interactive CFG viewer with arrow-key navigation."""
+        selected_visual_idx = 0
+        total_visual_blocks = [0]
+        selected_addr = [blocks[0].id_addr if blocks else 0]
+        
+        block_map = {b.id_addr: b for b in blocks}
+        entry_addr = blocks[0].id_addr if blocks else 0
+
+        def _build_tree() -> Tree:
+            """Build the Rich Tree with the selected block highlighted."""
+            total_visual_blocks[0] = 0
+
+            def _add_block(addr: int, tree_node: Tree, visited: set[int]) -> None:
+                if addr in visited:
+                    tree_node.add(f"[dim]-> Loop back to Block 0x{addr:X}[/]")
+                    return
+                if addr not in block_map:
+                    tree_node.add(f"[dim]-> External/Unknown: 0x{addr:X}[/]")
+                    return
+
+                visited.add(addr)
+                block = block_map[addr]
                 
-            visited.add(addr)
-            block = block_map[addr]
-            
-            ai_insight = insights_map.get(addr)
-            
-            insn_text = ""
+                is_selected = (total_visual_blocks[0] == selected_visual_idx)
+                if is_selected:
+                    selected_addr[0] = addr
+                    
+                total_visual_blocks[0] += 1
+                
+                has_threat = HexViewer._block_has_threat(block)
+
+                # Build instruction text
+                insn_lines = []
+                for i_addr, asm in block.instructions:
+                    threat = None
+                    parts = asm.split(None, 1)
+                    mnemonic = parts[0] if parts else ""
+                    op_str = parts[1] if len(parts) > 1 else ""
+                    for match_fn, threat_label in SUSPICIOUS_ASM_PATTERNS:
+                        try:
+                            if match_fn(mnemonic, op_str):
+                                threat = threat_label
+                                break
+                        except Exception:
+                            pass
+                    if threat:
+                        insn_lines.append(
+                            f"[red]0x{i_addr:X}: {asm:<30} [!] {threat}[/]"
+                        )
+                    else:
+                        insn_lines.append(f"[cyan]0x{i_addr:X}:[/] {asm}")
+
+                insn_text = "\n".join(insn_lines)
+
+                # Highlight selected block
+                if is_selected:
+                    border = "bold yellow"
+                    title = f"[bold yellow]> Block 0x{addr:X}[/]"
+                elif has_threat:
+                    border = "red"
+                    title = f"[bold red]Block 0x{addr:X} [!][/]"
+                else:
+                    border = "magenta"
+                    title = f"[bold magenta]Block 0x{addr:X}[/]"
+
+                panel = Panel(
+                    insn_text, title=title, border_style=border, expand=False
+                )
+                node = tree_node.add(panel)
+
+                # Add successor edges
+                for succ in block.successors:
+                    if len(block.successors) > 1:
+                        if succ == block.successors[0]:
+                            edge_label = "[bold red]False (Fallthrough) ->[/]"
+                        else:
+                            edge_label = "[bold green]True (Jump) ->[/]"
+                    else:
+                        edge_label = "[bold blue]->[/]"
+                    child_branch = node.add(edge_label)
+                    _add_block(succ, child_branch, visited.copy())
+
+            root = Tree(
+                f"[bold cyan]Control Flow Graph (Entry: 0x{entry_addr:X})[/]"
+            )
+            _add_block(entry_addr, root, set())
+            return root
+
+        def _build_detail_panel() -> Panel:
+            """Build the detail panel for the currently selected block."""
+            block = block_map.get(selected_addr[0], blocks[0])
+            detail = Text()
+
             for i_addr, asm in block.instructions:
                 threat = None
-                for match_fn, label in SUSPICIOUS_ASM_PATTERNS:
+                parts = asm.split(None, 1)
+                mnemonic = parts[0] if parts else ""
+                op_str = parts[1] if len(parts) > 1 else ""
+                for match_fn, threat_label in SUSPICIOUS_ASM_PATTERNS:
                     try:
-                        parts = asm.split(None, 1)
-                        if match_fn(parts[0] if parts else "", parts[1] if len(parts) > 1 else ""):
-                            threat = label
+                        if match_fn(mnemonic, op_str):
+                            threat = threat_label
                             break
-                    except Exception: pass
-                    
+                    except Exception:
+                        pass
+
                 if threat:
-                    insn_text += f"[red]0x{i_addr:X}: {asm:<30} ⚠ {threat}[/]\n"
+                    detail.append(
+                        f"  0x{i_addr:X}: {asm:<30} [!] {threat}\n",
+                        style="bold red",
+                    )
                 else:
-                    insn_text += f"[cyan]0x{i_addr:X}:[/] {asm}\n"
-                    
-            if ai_insight:
-                insn_text += f"\n[bold green]💡 AI Insight:[/] [italic green]{ai_insight}[/]"
-                    
-            panel = Panel(insn_text.strip(), title=f"[bold magenta]Block 0x{addr:X}[/]", border_style="magenta", expand=False)
-            node = tree_node.add(panel)
+                    detail.append(f"  0x{i_addr:X}: ", style="white")
+                    detail.append(f"{asm}\n", style="bright_green")
+
+            # Successors
+            detail.append("\n")
+            detail.append("  Successors: ", style="bold white")
+            if block.successors:
+                for succ in block.successors:
+                    detail.append(f"0x{succ:X} ", style="yellow")
+            else:
+                detail.append("none (terminal)", style="dim")
+            detail.append("\n")
+
+            # AI Insight
+            insight = insights_map.get(block.id_addr)
+            if insight:
+                detail.append("\n")
+                detail.append("  AI Insight\n", style="bold green")
+                for line in insight.split("\n"):
+                    detail.append(f"  {line}\n", style="italic green")
+
+            has_threat = HexViewer._block_has_threat(block)
+            detail_title = f"[bold magenta]Block 0x{block.id_addr:X}[/]"
+            if has_threat:
+                detail_title += " [bold red][!] SUSPICIOUS[/]"
+            return Panel(
+                detail,
+                title=detail_title,
+                border_style="magenta",
+                padding=(1, 1),
+            )
+
+        def _build_layout() -> Layout:
+            layout = Layout()
+            layout.split_row(
+                Layout(name="graph", ratio=3, minimum_size=45),
+                Layout(name="detail", ratio=2, minimum_size=35),
+            )
+
+            # Build and capture the tree
+            tree = _build_tree()
+            # Calculate actual width based on the 3:2 ratio (60%) minus padding
+            term_w = max(45, int(self.console.width * 0.6) - 4)
+            dummy_console = Console(
+                width=term_w,
+                color_system=self.console.color_system,
+                force_terminal=True,
+                highlight=False,
+            )
+            with dummy_console.capture() as cap:
+                dummy_console.print(tree)
+            tree_out = cap.get()
             
-            for succ in block.successors:
-                if len(block.successors) > 1:
-                    if succ == block.successors[0]:
-                        edge_label = "[bold red]False (Fallthrough) ↳[/]"
-                    else:
-                        edge_label = "[bold green]True (Jump) ↳[/]"
-                else:
-                    edge_label = "[bold blue]↳[/]"
+            lines = tree_out.split("\n")
+            
+            # Find selected line
+            selected_idx = 0
+            for i, line in enumerate(lines):
+                if "> Block" in line:
+                    selected_idx = i
+                    break
                     
-                child_branch = node.add(edge_label)
-                build_tree(succ, child_branch, visited.copy())
+            # Window the lines to fit the terminal height
+            term_h = self.console.height - 4
+            visible_count = max(5, term_h)
+            half = visible_count // 2
+            
+            # Apply extra_scroll and clamp
+            desired_start = selected_idx - half + extra_scroll[0]
+            start = max(0, min(desired_start, len(lines) - visible_count))
+            
+            # Update extra_scroll to reflect the clamped physical bounds (prevents dead scrolling)
+            extra_scroll[0] = start - (selected_idx - half)
+            
+            end = min(len(lines), start + visible_count)
+            if end == len(lines):
+                start = max(0, end - visible_count)
                 
-        root_tree = Tree(f"[bold cyan]Control Flow Graph (Entry: 0x{start_offset:X})[/]")
-        build_tree(start_offset, root_tree, set())
-        
-        self.console.clear()
-        self.console.print(root_tree)
-        self.console.print("\n[dim]Note: Displaying up to 10 basic blocks for readability.[/]")
-        input("\nPress Enter to return to Hex Viewer...")
+            visible_lines = lines[start:end]
+            
+            # Add scroll indicators if needed
+            from rich.text import Text
+            renderables = []
+            if start > 0:
+                renderables.append(Text(f"  ^ scrolled down {start} lines", style="dim italic"))
+            renderables.append(Text.from_ansi("\n".join(visible_lines)))
+            if end < len(lines):
+                renderables.append(Text(f"  v {len(lines) - end} more lines below", style="dim italic"))
+                
+            graph_panel = Panel(
+                Group(*renderables),
+                title="[bold]Control Flow Graph[/]",
+                subtitle=f"[dim]↑/↓ Navigate  |  q Quit  |  [{selected_visual_idx + 1}/{max(1, total_visual_blocks[0])}][/]",
+                border_style="cyan",
+                padding=(0, 1),
+            )
+            layout["graph"].update(graph_panel)
+            layout["detail"].update(_build_detail_panel())
+            
+            return layout
+
+        # ── Interactive loop ──
+        extra_scroll = [0]
+        with Live(
+            _build_layout(),
+            console=self.console,
+            screen=True,
+            auto_refresh=False,
+        ) as live:
+            while True:
+                key = self._read_key()
+                if key == 'q':
+                    break
+                elif key == 'up':
+                    if extra_scroll[0] > 0:
+                        extra_scroll[0] -= 1
+                    elif selected_visual_idx > 0:
+                        selected_visual_idx -= 1
+                        extra_scroll[0] = 0
+                    else:
+                        extra_scroll[0] -= 1
+                elif key == 'down':
+                    if extra_scroll[0] < 0:
+                        extra_scroll[0] += 1
+                    elif selected_visual_idx < total_visual_blocks[0] - 1:
+                        selected_visual_idx += 1
+                        extra_scroll[0] = 0
+                    else:
+                        extra_scroll[0] += 1
+                else:
+                    continue
+                live.update(_build_layout(), refresh=True)
 
     def run(self) -> None:
         """Launch the interactive paginated hex viewer."""
@@ -882,7 +1147,7 @@ class HexViewer:
                     except (EOFError, KeyboardInterrupt):
                         gen_insights = False
 
-                    self._render_cfg(target_offset, generate_insights=gen_insights)
+                    self._render_cfg(target_offset, generate_insights=gen_insights, max_blocks=1000)
                 except ValueError:
                     self.console.print("[red]Enter a valid offset (decimal or 0xHEX).[/]")
             else:
