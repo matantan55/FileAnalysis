@@ -17,6 +17,8 @@ from rich.progress import Progress, SpinnerColumn, TextColumn, BarColumn, TaskPr
 from rich.prompt import Prompt
 from rich.panel import Panel
 from rich.table import Table
+from rich.align import Align
+from rich.text import Text
 
 from prompt_toolkit import PromptSession
 from prompt_toolkit.key_binding import KeyBindings
@@ -229,8 +231,8 @@ def interactive_menu():
         menu_console.clear()
         
         # Print Banner
-        ascii_text = pyfiglet.figlet_format("MalOwn", font="slant")
-        menu_console.print(f"[bold red]{ascii_text}[/]", justify="center")
+        ascii_text = pyfiglet.figlet_format("MalOwn", font="block")
+        menu_console.print(Align.center(Text(ascii_text, style="bold red")))
         
         if error_msg:
             menu_console.print(f"[bold red]{error_msg}[/]", justify="center")
