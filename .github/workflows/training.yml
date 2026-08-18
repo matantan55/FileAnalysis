@@ -2,7 +2,7 @@ name: MalOwn Training
 
 on:
   push:
-    branches: [main]
+    branches: [main, new_feat]
   workflow_dispatch: # Allow manual triggering
 
 jobs:
