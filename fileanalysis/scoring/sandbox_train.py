@@ -734,7 +734,7 @@ def main(train_nn=True, train_tree=True):
 
         # Train LightGBM incrementally
         lgb_init_model = None
-        if WORKSPACE_LGB_MODEL_PATH.exists() and len(new_paths) > 0:
+        if WORKSPACE_LGB_MODEL_PATH.exists():
             lgb_init_model = str(WORKSPACE_LGB_MODEL_PATH)
             console.print("[bold green] Continuing LightGBM training from existing model...[/]")
         
@@ -742,10 +742,11 @@ def main(train_nn=True, train_tree=True):
         lgb_model = lgb.train(
             params,
             lgb_train,
-            num_boost_round=100, # Add 100 new trees each run
+            num_boost_round=100, # Add up to 100 new trees
             valid_sets=[lgb_train, lgb_val],
             init_model=lgb_init_model,
             callbacks=[
+                lgb.early_stopping(stopping_rounds=10, verbose=False),
                 lgb.record_evaluation(evals_result)
             ]
         )
