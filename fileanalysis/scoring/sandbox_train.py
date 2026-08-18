@@ -772,11 +772,13 @@ def main(train_nn=True, train_tree=True):
     # 10. Save models and scaler
     console.rule("[bold]Saving")
     WORKSPACE_MODEL_PATH.parent.mkdir(parents=True, exist_ok=True)
-    torch.save(model.state_dict(), WORKSPACE_MODEL_PATH)
-    console.print(f"[bold green] PyTorch Model saved to {WORKSPACE_MODEL_PATH}[/]")
+    if train_nn:
+        torch.save(model.state_dict(), WORKSPACE_MODEL_PATH)
+        console.print(f"[bold green] PyTorch Model saved to {WORKSPACE_MODEL_PATH}[/]")
 
-    lgb_model.save_model(str(WORKSPACE_LGB_MODEL_PATH))
-    console.print(f"[bold green] LightGBM Model saved to {WORKSPACE_LGB_MODEL_PATH}[/]")
+    if train_tree:
+        lgb_model.save_model(str(WORKSPACE_LGB_MODEL_PATH))
+        console.print(f"[bold green] LightGBM Model saved to {WORKSPACE_LGB_MODEL_PATH}[/]")
 
 
 
