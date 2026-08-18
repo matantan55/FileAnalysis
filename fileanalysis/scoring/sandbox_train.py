@@ -744,10 +744,10 @@ def main(train_nn=True, train_tree=True):
         val_preds_lgb_prob = lgb_model.predict(X_val)
         val_preds_lgb = (val_preds_lgb_prob >= 0.5).astype(int)
 
-        tp_lgb = ((val_preds_lgb == 1) & (val_true_np == 1)).sum().item()
-        tn_lgb = ((val_preds_lgb == 0) & (val_true_np == 0)).sum().item()
-        fp_lgb = ((val_preds_lgb == 1) & (val_true_np == 0)).sum().item()
-        fn_lgb = ((val_preds_lgb == 0) & (val_true_np == 1)).sum().item()
+        tp_lgb = ((val_preds_lgb == 1) & (y_val == 1)).sum().item()
+        tn_lgb = ((val_preds_lgb == 0) & (y_val == 0)).sum().item()
+        fp_lgb = ((val_preds_lgb == 1) & (y_val == 0)).sum().item()
+        fn_lgb = ((val_preds_lgb == 0) & (y_val == 1)).sum().item()
 
         acc_lgb = (tp_lgb + tn_lgb) / max(tp_lgb + tn_lgb + fp_lgb + fn_lgb, 1) * 100
         prec_lgb = tp_lgb / max(tp_lgb + fp_lgb, 1) * 100
