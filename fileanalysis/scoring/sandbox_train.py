@@ -728,11 +728,12 @@ def main():
     lgb_model = lgb.train(
         params,
         lgb_train,
-        num_boost_round=100, # Add 100 new trees each run
+        num_boost_round=500, # Increased max rounds, early stopping will halt it
         valid_sets=[lgb_train, lgb_val],
         init_model=lgb_init_model,
         callbacks=[
-            lgb.record_evaluation(evals_result)
+            lgb.record_evaluation(evals_result),
+            lgb.early_stopping(stopping_rounds=20)
         ]
     )
 
