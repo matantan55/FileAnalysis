@@ -491,7 +491,18 @@ def main(train_nn=True, train_tree=True):
         console.print("[green]No new files extracted. Cache remains unchanged.[/]")
 
 
-    # 4. (Removed Normalization) - LightGBM uses raw features
+    # 4. Normalize features (StandardScaler) - FROZEN to prevent drift
+    if WORKSPACE_SCALER_PATH.exists():
+        data = np.load(WORKSPACE_SCALER_PATH)
+        feat_mean, feat_std = data["mean"], data["std"]
+        console.print("[bold green] Using FROZEN feature scaler from disk.[/]")
+    else:
+        feat_mean = X.mean(axis=0)
+        feat_std = X.std(axis=0)
+        feat_std[feat_std < 1e-8] = 1.0  # avoid division by zero for constant features
+        console.print("[bold yellow] Created NEW feature scaler.[/]")
+    
+    X_norm = (X - feat_mean) / feat_std
 
     # 5. Train/validation split (80/20, stratified)
     np.random.seed(42)
@@ -510,8 +521,8 @@ def main(train_nn=True, train_tree=True):
     np.random.shuffle(train_idx)
     np.random.shuffle(val_idx)
 
-    X_train, y_train, paths_train = X[train_idx], y[train_idx], paths[train_idx]
-    X_val, y_val, paths_val = X[val_idx], y[val_idx], paths[val_idx]
+    X_train, y_train, paths_train = X_norm[train_idx], y[train_idx], paths[train_idx]
+    X_val, y_val, paths_val = X_norm[val_idx], y[val_idx], paths[val_idx]
 
     console.print(f"  Train: {len(X_train)} | Val: {len(X_val)}")
 
@@ -781,6 +792,10 @@ def main(train_nn=True, train_tree=True):
         console.print(f"[bold green] LightGBM Model saved to {WORKSPACE_LGB_MODEL_PATH}[/]")
 
 
+
+    if train_tree and not WORKSPACE_SCALER_PATH.exists():
+        np.savez(WORKSPACE_SCALER_PATH, mean=feat_mean, std=feat_std)
+        console.print(f"[bold green] Scaler saved to {WORKSPACE_SCALER_PATH}[/]")
 
     console.rule("[bold green] Training complete!")
 

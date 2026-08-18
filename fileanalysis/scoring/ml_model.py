@@ -30,8 +30,20 @@ class LightGBMThreatScorer:
 
     def __init__(self, model_path: str | Path | None = None) -> None:
         self.model_path = Path(model_path) if model_path else DEFAULT_MODEL_PATH
+        self.scaler_path = self.model_path.parent / "feature_scaler.npz"
         self.extractor = FeatureExtractor()
+        self.feat_mean, self.feat_std = self._load_scaler()
         self.model = self._load_model()
+
+    def _load_scaler(self):
+        """Load saved feature normalization parameters."""
+        if self.scaler_path.exists():
+            data = np.load(self.scaler_path)
+            logger.info("Loaded feature scaler from %s", self.scaler_path)
+            return data["mean"], data["std"]
+        else:
+            logger.warning("No feature scaler found at %s, using raw features", self.scaler_path)
+            return np.zeros(NUM_FEATURES, dtype=np.float32), np.ones(NUM_FEATURES, dtype=np.float32)
 
     def _load_model(self):
         """Load the LightGBM model with pre-trained weights."""
@@ -51,8 +63,9 @@ class LightGBMThreatScorer:
         This writes to the ml_* fields on AnalysisResult so it can coexist
         with the heuristic scorer's risk_score/risk_level fields and the nn_* fields.
         """
-        # Extract features
+        # Extract and normalize features
         features = self.extractor.extract(result)
+        features = (features - self.feat_mean) / (self.feat_std + 1e-8)
         
         # Inference
         raw_output = self.model.predict(features.reshape(1, -1))[0]
