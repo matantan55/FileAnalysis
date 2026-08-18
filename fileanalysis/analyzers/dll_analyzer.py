@@ -239,7 +239,7 @@ class DLLAnalyzer(BaseAnalyzer):
                     )
                     forwarded.append(f"{export_name} -> {forwarder_name}")
                 except Exception:
-                    continue
+                    pass
 
         if forwarded:
             result.format_info["forwarded_exports"] = forwarded[:50]
@@ -260,12 +260,10 @@ class DLLAnalyzer(BaseAnalyzer):
             if exp.name:
                 try:
                     name = exp.name.decode("utf-8", errors="replace")
-                    for pattern in rundll32_patterns:
-                        if pattern.lower() in name.lower():
-                            rundll32_exports.append(name)
-                            break
+                    if any(pattern.lower() in name.lower() for pattern in rundll32_patterns):
+                        rundll32_exports.append(name)
                 except Exception:
-                    continue
+                    pass
 
         if rundll32_exports:
             result.format_info["rundll32_exports"] = rundll32_exports
@@ -336,13 +334,11 @@ class DLLAnalyzer(BaseAnalyzer):
         for entry in pe.DIRECTORY_ENTRY_IMPORT:
             try:
                 dll_name = entry.dll.decode("utf-8", errors="replace").lower()
+                imported_dlls.append(dll_name)
+                if dll_name in unusual_imports:
+                    suspicious_deps.append((dll_name, unusual_imports[dll_name]))
             except Exception:
-                continue
-
-            imported_dlls.append(dll_name)
-
-            if dll_name in unusual_imports:
-                suspicious_deps.append((dll_name, unusual_imports[dll_name]))
+                pass
 
         result.format_info["dll_dependencies"] = imported_dlls
 
@@ -377,18 +373,23 @@ class DLLAnalyzer(BaseAnalyzer):
                 b"\xFF\x15": "Indirect call through import table at entry",
             }
 
-            for pattern, description in suspicious_patterns.items():
-                if pattern in ep_bytes[:32]:
-                    result.indicators.append(Indicator(
-                        category=ThreatCategory.EXECUTION,
-                        name="Suspicious DllMain Entry Pattern",
-                        description=(
-                            f"{description}. DLLs that create threads or make significant "
-                            "API calls immediately on load are often malicious."
-                        ),
-                        evidence=[f"Pattern at EP offset +0x{ep_bytes.find(pattern):X}"],
-                        severity=0.5,
-                    ))
-                    break
+            # Find the first matching pattern using next()
+            first_match = next(
+                ((pattern, description) for pattern, description in suspicious_patterns.items()
+                 if pattern in ep_bytes[:32]),
+                None,
+            )
+            if first_match:
+                pattern, description = first_match
+                result.indicators.append(Indicator(
+                    category=ThreatCategory.EXECUTION,
+                    name="Suspicious DllMain Entry Pattern",
+                    description=(
+                        f"{description}. DLLs that create threads or make significant "
+                        "API calls immediately on load are often malicious."
+                    ),
+                    evidence=[f"Pattern at EP offset +0x{ep_bytes.find(pattern):X}"],
+                    severity=0.5,
+                ))
         except Exception:
             pass

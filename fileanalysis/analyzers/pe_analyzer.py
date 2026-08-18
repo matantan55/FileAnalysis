@@ -60,8 +60,8 @@ IMPORT_THREAT_MAP: dict[str, tuple[ThreatCategory, str]] = {
     "RegSetValueExA": (ThreatCategory.PERSISTENCE, "Registry modification for persistence"),
     "RegSetValueExW": (ThreatCategory.PERSISTENCE, "Registry modification for persistence"),
     "RegCreateKeyExA": (ThreatCategory.PERSISTENCE, "Registry key creation for persistence"),
-    "RegDeleteKeyA": (ThreatCategory.DEFENSE_EVASION, "Registry key deletion to hide tracks or break security"),
-    "RegDeleteKeyW": (ThreatCategory.DEFENSE_EVASION, "Registry key deletion to hide tracks or break security"),
+    "RegDeleteKeyA": (ThreatCategory.DEFENSE_EVASION, "Registry key deletion to hide tracks or compromise security"),
+    "RegDeleteKeyW": (ThreatCategory.DEFENSE_EVASION, "Registry key deletion to hide tracks or compromise security"),
     "RegDeleteValueA": (ThreatCategory.DEFENSE_EVASION, "Registry value deletion to hide tracks"),
     "RegDeleteValueW": (ThreatCategory.DEFENSE_EVASION, "Registry value deletion to hide tracks"),
     "RegOpenKeyExA": (ThreatCategory.DISCOVERY, "Registry key reading/discovery"),
@@ -334,9 +334,9 @@ class PEAnalyzer(BaseAnalyzer):
             try:
                 name = section.Name.decode("utf-8", errors="replace").strip("\x00")
             except Exception:
-                continue
+                name = ""
 
-            if name in SUSPICIOUS_SECTION_NAMES:
+            if name and name in SUSPICIOUS_SECTION_NAMES:
                 packer_name = "Unknown packer"
                 if "UPX" in name.upper():
                     packer_name = "UPX"

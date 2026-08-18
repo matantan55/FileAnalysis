@@ -19,6 +19,8 @@ import os
 os.environ["KMP_DUPLICATE_LIB_OK"] = "TRUE"
 os.environ["OMP_NUM_THREADS"] = "1"
 
+import itertools
+
 import subprocess
 import concurrent.futures
 import hashlib
@@ -140,6 +142,7 @@ def clone_zoo():
     console.print(f"[bold]Found {len(zips)} zips in theZoo to extract.[/]")
 
     extracted = 0
+    capped_zips = zips[:MAX_ZOO_FILES]
     with Progress(
         SpinnerColumn(),
         TextColumn("[bold yellow]Extracting theZoo"),
@@ -147,10 +150,8 @@ def clone_zoo():
         TextColumn("[progress.percentage]{task.percentage:>3.0f}%"),
         TimeRemainingColumn(),
     ) as progress:
-        task_zoo = progress.add_task("Extracting...", total=min(len(zips), MAX_ZOO_FILES))
-        for zf in zips:
-            if extracted >= MAX_ZOO_FILES:
-                break
+        task_zoo = progress.add_task("Extracting...", total=len(capped_zips))
+        for zf in capped_zips:
             out_dir = extract_dir / zf.stem
             out_dir.mkdir(exist_ok=True)
             try:
@@ -233,6 +234,31 @@ def fetch_github_datasets():
 
 
 
+def _collect_from_dir(sdir: Path, seen_hashes: set, collected: int, max_count: int) -> int:
+    """Collect valid files from a single system directory, deduplicating by hash."""
+    if not sdir.exists():
+        return collected
+    for f in sdir.rglob("*"):
+        if collected >= max_count:
+            return collected
+        if not f.is_file():
+            pass
+        else:
+            try:
+                size = f.stat().st_size
+                if 100 <= size <= 100_000_000:
+                    file_hash = hashlib.md5(f.read_bytes()).hexdigest()
+                    if file_hash not in seen_hashes:
+                        seen_hashes.add(file_hash)
+                        dest = SYSTEM_BENIGN_DIR / f"{file_hash}_{f.name}"
+                        if not dest.exists():
+                            dest.symlink_to(f)
+                        collected += 1
+            except Exception:
+                pass
+    return collected
+
+
 def collect_system_benign():
     """Collect real benign files from the Docker container's OS.
     
@@ -259,32 +285,12 @@ def collect_system_benign():
 
     collected = 0
     seen_hashes = set()
+    max_count = 5000
     for sdir in system_dirs:
-        if not sdir.exists():
-            continue
-        for f in sdir.rglob("*"):
-            if not f.is_file():
-                continue
-            try:
-                size = f.stat().st_size
-                if size < 100 or size > 100_000_000:  # skip trivially small or huge files
-                    continue
-                # Deduplicate by content hash
-                file_hash = hashlib.md5(f.read_bytes()).hexdigest()
-                if file_hash in seen_hashes:
-                    continue
-                seen_hashes.add(file_hash)
-
-                dest = SYSTEM_BENIGN_DIR / f"{file_hash}_{f.name}"
-                if not dest.exists():
-                    dest.symlink_to(f)  # symlink to avoid copying gigabytes
-                collected += 1
-            except Exception:
-                pass
-            if collected >= 5000:
-                break
-        if collected >= 5000:
-            break
+        if collected >= max_count:
+            pass
+        else:
+            collected = _collect_from_dir(sdir, seen_hashes, collected, max_count)
 
     console.print(f"[green] Collected {collected} system benign files.[/]")
 
@@ -364,17 +370,18 @@ def extract_features(file_paths, label, progress, task):
     return features_list, labels_list, paths_list
 
 
+def _valid_files_gen(directory: Path):
+    """Generator that yields valid files from a directory."""
+    for f in directory.rglob("*"):
+        if f.is_file() and f.stat().st_size > 100:
+            yield f
+
+
 def collect_files(directory: Path, max_files: int = 10000) -> list[Path]:
     """Recursively collect files from a directory, skipping directories and tiny files."""
-    files = []
     if not directory.exists():
-        return files
-    for f in directory.rglob("*"):
-        if f.is_file() and f.stat().st_size > 100:  # skip empty/tiny files
-            files.append(f)
-            if len(files) >= max_files:
-                break
-    return files
+        return []
+    return list(itertools.islice(_valid_files_gen(directory), max_files))
 
 
 # 
@@ -534,7 +541,6 @@ def main():
 
     # 6. Train MalConv (PyTorch)
     console.print("[bold cyan] Training MalConv (Deep Learning) on raw bytes…[/]")
-    import torch
     torch.set_num_threads(2) # Prevent CPU thread explosion segfault in Docker
     model = MalConv()
     

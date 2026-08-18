@@ -8,6 +8,7 @@ from fileanalysis.analyzers.base import (
     Indicator,
     ThreatCategory,
 )
+from fileanalysis.analyzers.entropy import EntropyAnalyzer
 
 
 # Suspicious macOS API imports mapped to threat categories
@@ -94,11 +95,8 @@ class MachOAnalyzer(BaseAnalyzer):
 
                 # Calculate entropy
                 try:
-                    entropy = 0.0
                     content = bytes(section.content)
-                    if content:
-                        from fileanalysis.analyzers.entropy import EntropyAnalyzer
-                        entropy = EntropyAnalyzer.calculate_section_entropy(content)
+                    entropy = EntropyAnalyzer.calculate_section_entropy(content) if content else 0.0
                 except Exception:
                     entropy = 0.0
 
@@ -154,13 +152,11 @@ class MachOAnalyzer(BaseAnalyzer):
     def _check_code_signature(self, binary, result: AnalysisResult) -> None:
         """Check for code signing information."""
         info = result.format_info
-        has_signature = False
 
         # Check if code signature load command is present
-        for command in binary.commands:
-            if isinstance(command, lief.MachO.CodeSignature):
-                has_signature = True
-                break
+        has_signature = any(
+            isinstance(command, lief.MachO.CodeSignature) for command in binary.commands
+        )
 
         info["code_signed"] = has_signature
 

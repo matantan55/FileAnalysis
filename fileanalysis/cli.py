@@ -42,6 +42,7 @@ from fileanalysis.scoring.scorer import ThreatScorer
 from fileanalysis.scoring.nn_model import NNThreatScorer
 from fileanalysis.scoring.ml_model import LightGBMThreatScorer
 from fileanalysis.intelligence.ai_insights import AIInsightsGenerator
+from fileanalysis.research.hex_viewer import HexViewer
 
 console = Console(stderr=True)
 
@@ -226,7 +227,8 @@ def interactive_menu():
             
     session = PromptSession(key_bindings=kb)
     
-    while True:
+    running = True
+    while running:
         # Clear screen for menu loop
         menu_console.clear()
         
@@ -279,35 +281,35 @@ def interactive_menu():
             choice = session.prompt("> ").strip().lower()
         except (EOFError, KeyboardInterrupt):
             menu_console.print("[bold cyan]Exiting...[/]")
-            break
+            running = False
 
-        if choice in ["4", "q", "quit"]:
+        if not running:
+            pass
+        elif choice in ["4", "q", "quit"]:
             menu_console.print("[bold cyan]Exiting...[/]")
-            break
+            running = False
             
         elif choice == "3":
             loaded_files.clear()
             
         elif choice in ["1", "2"]:
-            if not loaded_files:
+            if loaded_files:
+                selected_file = loaded_files[0]
+                if len(loaded_files) > 1:
+                    file_idx = Prompt.ask(
+                        "\n[bold yellow]Select a file by index[/]",
+                        choices=[str(i+1) for i in range(len(loaded_files))]
+                    )
+                    selected_file = loaded_files[int(file_idx)-1]
+                    
+                if choice == "1":
+                    run_analysis(selected_file, json_format=False, yara_rules=None)
+                    Prompt.ask("\n[bold dim]Press Enter to return to the main menu...[/]")
+                elif choice == "2":
+                    viewer = HexViewer(selected_file)
+                    viewer.run()
+            else:
                 error_msg = "No files loaded! Please paste a file path first."
-                continue
-                
-            selected_file = loaded_files[0]
-            if len(loaded_files) > 1:
-                file_idx = Prompt.ask(
-                    "\n[bold yellow]Select a file by index[/]",
-                    choices=[str(i+1) for i in range(len(loaded_files))]
-                )
-                selected_file = loaded_files[int(file_idx)-1]
-                
-            if choice == "1":
-                run_analysis(selected_file, json_format=False, yara_rules=None)
-                Prompt.ask("\n[bold dim]Press Enter to return to the main menu...[/]")
-            elif choice == "2":
-                from fileanalysis.research.hex_viewer import HexViewer
-                viewer = HexViewer(selected_file)
-                viewer.run()
                 
         else:
             # Not a recognized option number; try to load it as a file path
@@ -334,7 +336,6 @@ def cli(file_path: str | None, json_format: bool, research: bool, yara_rules: st
     else:
         # One-shot CLI mode
         if research:
-            from fileanalysis.research.hex_viewer import HexViewer
             viewer = HexViewer(file_path)
             viewer.run()
         else:

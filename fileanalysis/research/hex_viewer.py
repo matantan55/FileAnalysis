@@ -127,6 +127,14 @@ SUSPICIOUS_ASM_PATTERNS: list[tuple[callable, str]] = [
 ]
 
 
+def _safe_match(match_fn, mnemonic: str, op_str: str) -> bool:
+    """Safely call a match function, returning False on any exception."""
+    try:
+        return match_fn(mnemonic, op_str)
+    except Exception:
+        return False
+
+
 # ─── Binary Annotator ──────────────────────────────────────────────
 
 class BinaryAnnotator:
@@ -135,11 +143,15 @@ class BinaryAnnotator:
     def annotate(self, data: bytes) -> list[Annotation]:
         annotations: list[Annotation] = []
 
-        # 1. File header signatures
-        for sig, label, style in HEADER_SIGNATURES:
-            if data[:len(sig)] == sig:
-                annotations.append(Annotation(0, len(sig), label, style))
-                break
+        # 1. File header signatures — find first match
+        header_match = next(
+            ((sig, label, style) for sig, label, style in HEADER_SIGNATURES
+             if data[:len(sig)] == sig),
+            None,
+        )
+        if header_match:
+            sig, label, style = header_match
+            annotations.append(Annotation(0, len(sig), label, style))
 
         # 2. PE-specific deep annotations
         if data[:2] == b"MZ" and len(data) > 0x40:
@@ -255,7 +267,7 @@ class BinaryAnnotator:
                 i += 1
 
 
-from dataclasses import dataclass
+
 
 @dataclass
 class BasicBlock:
@@ -306,15 +318,14 @@ class Disassembler:
 
                     for i in range(num_sections):
                         sec_off = section_table + i * 40
-                        if sec_off + 40 > len(data):
-                            break
-                        name = data[sec_off:sec_off + 8].rstrip(b"\x00").decode("ascii", errors="replace")
-                        raw_size = struct.unpack_from("<I", data, sec_off + 16)[0]
-                        raw_ptr = struct.unpack_from("<I", data, sec_off + 20)[0]
-                        chars = struct.unpack_from("<I", data, sec_off + 36)[0]
-                        # IMAGE_SCN_CNT_CODE (0x20) or IMAGE_SCN_MEM_EXECUTE (0x20000000)
-                        if chars & 0x20 or chars & 0x20000000:
-                            self.code_sections.append((raw_ptr, raw_size))
+                        if sec_off + 40 <= len(data):
+                            name = data[sec_off:sec_off + 8].rstrip(b"\x00").decode("ascii", errors="replace")
+                            raw_size = struct.unpack_from("<I", data, sec_off + 16)[0]
+                            raw_ptr = struct.unpack_from("<I", data, sec_off + 20)[0]
+                            chars = struct.unpack_from("<I", data, sec_off + 36)[0]
+                            # IMAGE_SCN_CNT_CODE (0x20) or IMAGE_SCN_MEM_EXECUTE (0x20000000)
+                            if chars & 0x20 or chars & 0x20000000:
+                                self.code_sections.append((raw_ptr, raw_size))
             except (struct.error, IndexError):
                 pass
 
@@ -346,19 +357,18 @@ class Disassembler:
 
                 for i in range(e_shnum):
                     sh_off = e_shoff + i * e_shentsize
-                    if sh_off + e_shentsize > len(data):
-                        break
-                    if ei_class == 2:
-                        sh_flags = struct.unpack_from("<Q", data, sh_off + 8)[0]
-                        sh_offset = struct.unpack_from("<Q", data, sh_off + 24)[0]
-                        sh_size = struct.unpack_from("<Q", data, sh_off + 32)[0]
-                    else:
-                        sh_flags = struct.unpack_from("<I", data, sh_off + 8)[0]
-                        sh_offset = struct.unpack_from("<I", data, sh_off + 16)[0]
-                        sh_size = struct.unpack_from("<I", data, sh_off + 20)[0]
-                    # SHF_EXECINSTR = 0x4
-                    if sh_flags & 0x4:
-                        self.code_sections.append((sh_offset, sh_size))
+                    if sh_off + e_shentsize <= len(data):
+                        if ei_class == 2:
+                            sh_flags = struct.unpack_from("<Q", data, sh_off + 8)[0]
+                            sh_offset = struct.unpack_from("<Q", data, sh_off + 24)[0]
+                            sh_size = struct.unpack_from("<Q", data, sh_off + 32)[0]
+                        else:
+                            sh_flags = struct.unpack_from("<I", data, sh_off + 8)[0]
+                            sh_offset = struct.unpack_from("<I", data, sh_off + 16)[0]
+                            sh_size = struct.unpack_from("<I", data, sh_off + 20)[0]
+                        # SHF_EXECINSTR = 0x4
+                        if sh_flags & 0x4:
+                            self.code_sections.append((sh_offset, sh_size))
             except (struct.error, IndexError):
                 pass
 
@@ -373,7 +383,6 @@ class Disassembler:
             return
             
         total_size = sum(sz for _, sz in self.code_sections)
-        from rich.progress import Progress, SpinnerColumn, TextColumn, BarColumn, TaskProgressColumn, TimeElapsedColumn
         
         progress = None
         if console and total_size > 0:
@@ -428,72 +437,74 @@ class Disassembler:
 
         while queue and len(blocks) < max_blocks:
             current_addr = queue.pop(0)
-            if current_addr in seen:
-                continue
-            seen.add(current_addr)
-            
-            # Find which section we are in
-            sec_start, sec_size = 0, 0
-            for off, sz in self.code_sections:
-                if off <= current_addr < off + sz:
-                    sec_start, sec_size = off, sz
-                    break
-            
-            if not sec_start:
-                continue
+            if current_addr not in seen:
+                seen.add(current_addr)
                 
-            code_chunk = self.data[current_addr : sec_start + sec_size]
-            
-            block_insns = []
-            successors = []
-            block_addr = current_addr
-            
-            # Disassemble from current_addr
-            for insn in self.md.disasm(code_chunk, current_addr):
-                asm_str = f"{insn.mnemonic} {insn.op_str}".strip()
-                block_insns.append((insn.address, asm_str))
+                # Find which section we are in
+                section_match = next(
+                    ((off, sz) for off, sz in self.code_sections
+                     if off <= current_addr < off + sz),
+                    None,
+                )
                 
-                # Check branch
-                is_jmp, is_call, is_ret = False, False, False
-                try:
-                    is_jmp = capstone.CS_GRP_JUMP in insn.groups
-                    is_call = capstone.CS_GRP_CALL in insn.groups
-                    is_ret = capstone.CS_GRP_RET in insn.groups
-                except capstone.CsError:
-                    pass
-                
-                if is_jmp or is_call or is_ret:
-                    target = None
-                    try:
-                        if insn.op_str.startswith("0x"):
-                            target = int(insn.op_str, 16)
-                    except ValueError:
-                        pass
-                        
-                    if is_jmp:
-                        # Conditional jumps have both target and fallthrough
-                        if insn.mnemonic != "jmp":
-                            fallthrough = insn.address + insn.size
-                            successors.append(fallthrough)
-                            if fallthrough not in seen and fallthrough not in queue:
-                                queue.append(fallthrough)
-                                
-                        if target:
-                            successors.append(target)
-                            if target not in seen and target not in queue:
-                                queue.append(target)
+                if section_match is not None:
+                    sec_start, sec_size = section_match
+                    code_chunk = self.data[current_addr : sec_start + sec_size]
                     
-                    elif is_call:
-                        # Treat call as sequential intra-procedural flow
-                        fallthrough = insn.address + insn.size
-                        successors.append(fallthrough)
-                        if fallthrough not in seen and fallthrough not in queue:
-                            queue.append(fallthrough)
+                    block_insns = []
+                    successors = []
+                    block_addr = current_addr
+                    
+                    # Disassemble from current_addr
+                    terminated = False
+                    for insn in self.md.disasm(code_chunk, current_addr):
+                        if terminated:
+                            pass
+                        else:
+                            asm_str = f"{insn.mnemonic} {insn.op_str}".strip()
+                            block_insns.append((insn.address, asm_str))
                             
-                    break
-                    
-            if block_insns:
-                blocks[block_addr] = BasicBlock(id_addr=block_addr, instructions=block_insns, successors=successors)
+                            # Check branch
+                            is_jmp, is_call, is_ret = False, False, False
+                            try:
+                                is_jmp = capstone.CS_GRP_JUMP in insn.groups
+                                is_call = capstone.CS_GRP_CALL in insn.groups
+                                is_ret = capstone.CS_GRP_RET in insn.groups
+                            except capstone.CsError:
+                                pass
+                            
+                            if is_jmp or is_call or is_ret:
+                                target = None
+                                try:
+                                    if insn.op_str.startswith("0x"):
+                                        target = int(insn.op_str, 16)
+                                except ValueError:
+                                    pass
+                                    
+                                if is_jmp:
+                                    # Conditional jumps have both target and fallthrough
+                                    if insn.mnemonic != "jmp":
+                                        fallthrough = insn.address + insn.size
+                                        successors.append(fallthrough)
+                                        if fallthrough not in seen and fallthrough not in queue:
+                                            queue.append(fallthrough)
+                                            
+                                    if target:
+                                        successors.append(target)
+                                        if target not in seen and target not in queue:
+                                            queue.append(target)
+                                
+                                elif is_call:
+                                    # Treat call as sequential intra-procedural flow
+                                    fallthrough = insn.address + insn.size
+                                    successors.append(fallthrough)
+                                    if fallthrough not in seen and fallthrough not in queue:
+                                        queue.append(fallthrough)
+                                        
+                                terminated = True
+                        
+                    if block_insns:
+                        blocks[block_addr] = BasicBlock(id_addr=block_addr, instructions=block_insns, successors=successors)
                 
         self.md.detail = False
         return list(blocks.values())
@@ -579,29 +590,29 @@ class HexViewer:
             else:
                 ascii_text.append(".", style="dim")
 
-        # Assembly column
-        asm_result = None
+        # Assembly column — find first disassembled instruction in this row
+        first_asm_offset = next(
+            (byte_off for byte_off in range(offset, offset + len(chunk))
+             if self.disasm.get_asm_at(byte_off) is not None),
+            None,
+        )
+        asm_result = self.disasm.get_asm_at(first_asm_offset) if first_asm_offset is not None else None
         asm_mnemonic = None
         asm_op_str = None
-        for byte_off in range(offset, offset + len(chunk)):
-            asm = self.disasm.get_asm_at(byte_off)
-            if asm:
-                asm_result = asm
-                parts = asm.split(None, 1)
-                asm_mnemonic = parts[0] if parts else ""
-                asm_op_str = parts[1] if len(parts) > 1 else ""
-                break
+        if asm_result:
+            parts = asm_result.split(None, 1)
+            asm_mnemonic = parts[0] if parts else ""
+            asm_op_str = parts[1] if len(parts) > 1 else ""
 
         # Check if this instruction matches a suspicious pattern
         threat_label = None
         if asm_mnemonic:
-            for match_fn, label in SUSPICIOUS_ASM_PATTERNS:
-                try:
-                    if match_fn(asm_mnemonic, asm_op_str):
-                        threat_label = label
-                        break
-                except Exception:
-                    pass
+            threat_match = next(
+                (label for match_fn, label in SUSPICIOUS_ASM_PATTERNS
+                 if _safe_match(match_fn, asm_mnemonic, asm_op_str)),
+                None,
+            )
+            threat_label = threat_match
 
         if asm_result and threat_label:
             asm_text = Text(f"{asm_result}", style="bold red")
@@ -640,10 +651,12 @@ class HexViewer:
         table.add_column("Assembly", style="bright_green", ratio=1, no_wrap=True)
         table.add_column("Annotation", style="yellow", ratio=1)
 
-        for row_idx in range(self.ROWS_PER_PAGE):
+        rows_to_render = min(
+            self.ROWS_PER_PAGE,
+            (len(self.data) - start_offset + self.BYTES_PER_ROW - 1) // self.BYTES_PER_ROW,
+        )
+        for row_idx in range(rows_to_render):
             offset = start_offset + row_idx * self.BYTES_PER_ROW
-            if offset >= len(self.data):
-                break
             off_t, hex_t, asc_t, asm_t, ann_t = self._render_row(offset)
             table.add_row(off_t, hex_t, asc_t, asm_t, ann_t)
 
@@ -654,9 +667,8 @@ class HexViewer:
         lines = []
         for ann in self.annotations:
             # Skip very common ones like null padding and short strings for the summary
-            if "Null Padding" in ann.label:
-                continue
-            lines.append(f"  [{ann.style}]0x{ann.offset:08X}[/]  {ann.label}")
+            if "Null Padding" not in ann.label:
+                lines.append(f"  [{ann.style}]0x{ann.offset:08X}[/]  {ann.label}")
 
         if not lines:
             content = "[dim]No notable annotations found.[/]"
@@ -812,17 +824,14 @@ class HexViewer:
                 # Build instruction text
                 insn_lines = []
                 for i_addr, asm in block.instructions:
-                    threat = None
                     parts = asm.split(None, 1)
                     mnemonic = parts[0] if parts else ""
                     op_str = parts[1] if len(parts) > 1 else ""
-                    for match_fn, threat_label in SUSPICIOUS_ASM_PATTERNS:
-                        try:
-                            if match_fn(mnemonic, op_str):
-                                threat = threat_label
-                                break
-                        except Exception:
-                            pass
+                    threat = next(
+                        (label for match_fn, label in SUSPICIOUS_ASM_PATTERNS
+                         if _safe_match(match_fn, mnemonic, op_str)),
+                        None,
+                    )
                     if threat:
                         insn_lines.append(
                             f"[red]0x{i_addr:X}: {asm:<30} [!] {threat}[/]"
@@ -872,17 +881,14 @@ class HexViewer:
             detail = Text()
 
             for i_addr, asm in block.instructions:
-                threat = None
                 parts = asm.split(None, 1)
                 mnemonic = parts[0] if parts else ""
                 op_str = parts[1] if len(parts) > 1 else ""
-                for match_fn, threat_label in SUSPICIOUS_ASM_PATTERNS:
-                    try:
-                        if match_fn(mnemonic, op_str):
-                            threat = threat_label
-                            break
-                    except Exception:
-                        pass
+                threat = next(
+                    (label for match_fn, label in SUSPICIOUS_ASM_PATTERNS
+                     if _safe_match(match_fn, mnemonic, op_str)),
+                    None,
+                )
 
                 if threat:
                     detail.append(
@@ -946,11 +952,10 @@ class HexViewer:
             lines = tree_out.split("\n")
             
             # Find selected line
-            selected_idx = 0
-            for i, line in enumerate(lines):
-                if "> Block" in line:
-                    selected_idx = i
-                    break
+            selected_idx = next(
+                (i for i, line in enumerate(lines) if "> Block" in line),
+                0,
+            )
                     
             # Window the lines to fit the terminal height
             term_h = self.console.height - 4
@@ -971,7 +976,7 @@ class HexViewer:
             visible_lines = lines[start:end]
             
             # Add scroll indicators if needed
-            from rich.text import Text
+
             renderables = []
             if start > 0:
                 renderables.append(Text(f"  ^ scrolled down {start} lines", style="dim italic"))
@@ -999,10 +1004,13 @@ class HexViewer:
             screen=True,
             auto_refresh=False,
         ) as live:
-            while True:
+            running = True
+            while running:
                 key = self._read_key()
+                needs_refresh = True
                 if key == 'q':
-                    break
+                    running = False
+                    needs_refresh = False
                 elif key == 'up':
                     if extra_scroll[0] > 0:
                         extra_scroll[0] -= 1
@@ -1020,8 +1028,9 @@ class HexViewer:
                     else:
                         extra_scroll[0] += 1
                 else:
-                    continue
-                live.update(_build_layout(), refresh=True)
+                    needs_refresh = False
+                if needs_refresh:
+                    live.update(_build_layout(), refresh=True)
 
     def run(self) -> None:
         """Launch the interactive paginated hex viewer."""
@@ -1133,25 +1142,25 @@ class HexViewer:
                         target_offset = int(offset_str, 16) if offset_str.startswith("0x") else int(offset_str)
                     else:
                         # Find the first executable code byte on the current page
-                        target_offset = None
                         start_offset = page * self.ROWS_PER_PAGE * self.BYTES_PER_ROW
                         end_offset = start_offset + (self.ROWS_PER_PAGE * self.BYTES_PER_ROW)
-                        for off in range(start_offset, end_offset):
-                            if self.disasm.is_code_offset(off):
-                                target_offset = off
-                                break
+                        target_offset = next(
+                            (off for off in range(start_offset, end_offset)
+                             if self.disasm.is_code_offset(off)),
+                            None,
+                        )
                         if target_offset is None:
                             self.console.print("[red]No executable code found on current page to graph. Supply an offset: c <offset>[/]")
-                            continue
                             
-                    # Ask for AI Insights
-                    try:
-                        ans = session.prompt("Generate AI insights for this graph? (y/n) > ").strip().lower()
-                        gen_insights = ans in ("y", "yes")
-                    except (EOFError, KeyboardInterrupt):
-                        gen_insights = False
+                    if target_offset is not None:
+                        # Ask for AI Insights
+                        try:
+                            ans = session.prompt("Generate AI insights for this graph? (y/n) > ").strip().lower()
+                            gen_insights = ans in ("y", "yes")
+                        except (EOFError, KeyboardInterrupt):
+                            gen_insights = False
 
-                    self._render_cfg(target_offset, generate_insights=gen_insights, max_blocks=1000)
+                        self._render_cfg(target_offset, generate_insights=gen_insights, max_blocks=1000)
                 except ValueError:
                     self.console.print("[red]Enter a valid offset (decimal or 0xHEX).[/]")
             else:

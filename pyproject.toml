@@ -16,13 +16,12 @@ dependencies = [
     "transformers>=4.0.0",
     "lightgbm>=4.0.0",
     "scikit-learn>=1.3.0",
+    "google-genai>=0.1.2",
     "pyfiglet>=1.0.4",
     "capstone>=5.0.9",
     "prompt-toolkit>=3.0.52",
+    "torch>=2.0",
 ]
-
-[project.optional-dependencies]
-nn = ["torch>=2.0"]
 
 [project.scripts]
 fileanalysis = "fileanalysis.cli:cli"
