@@ -486,13 +486,6 @@ def main():
     else:
         console.print("[green]No new files extracted. Cache remains unchanged.[/]")
 
-    # 3.5 Deduplicate Dataset (prevents data leakage between train/val)
-    _, unique_indices = np.unique(X, axis=0, return_index=True)
-    if len(unique_indices) < len(X):
-        console.print(f"[bold yellow] Removed {len(X) - len(unique_indices)} duplicate files from dataset to prevent data leakage.[/]")
-        X = X[unique_indices]
-        y = y[unique_indices]
-        paths = paths[unique_indices]
 
     # 4. Normalize features (StandardScaler)
     feat_mean = X.mean(axis=0)
@@ -726,15 +719,21 @@ def main():
         'verbose': -1
     }
 
+    # Train LightGBM incrementally
+    lgb_init_model = None
+    if WORKSPACE_LGB_MODEL_PATH.exists() and len(new_paths) > 0:
+        lgb_init_model = str(WORKSPACE_LGB_MODEL_PATH)
+        console.print("[bold green] Continuing LightGBM training from existing model...[/]")
+        
     evals_result = {}
     lgb_model = lgb.train(
         params,
         lgb_train,
-        num_boost_round=1000, # Increased max rounds, early stopping will halt it
+        num_boost_round=100, # Add 100 new trees each run
         valid_sets=[lgb_train, lgb_val],
+        init_model=lgb_init_model,
         callbacks=[
-            lgb.record_evaluation(evals_result),
-            lgb.early_stopping(stopping_rounds=20)
+            lgb.record_evaluation(evals_result)
         ]
     )
 
