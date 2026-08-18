@@ -715,22 +715,16 @@ def main():
         'boosting_type': 'gbdt',
         'learning_rate': 0.05,
         'num_leaves': 31,
-        'verbose': -1
+        'verbose': -1,
+        'is_unbalance': True
     }
 
-    # Train LightGBM incrementally without early stopping
-    lgb_init_model = None
-    if WORKSPACE_LGB_MODEL_PATH.exists() and len(new_paths) > 0:
-        lgb_init_model = str(WORKSPACE_LGB_MODEL_PATH)
-        console.print("[bold green] Continuing LightGBM training from existing model...[/]")
-        
     evals_result = {}
     lgb_model = lgb.train(
         params,
         lgb_train,
         num_boost_round=500, # Increased max rounds, early stopping will halt it
         valid_sets=[lgb_train, lgb_val],
-        init_model=lgb_init_model,
         callbacks=[
             lgb.record_evaluation(evals_result),
             lgb.early_stopping(stopping_rounds=20)
