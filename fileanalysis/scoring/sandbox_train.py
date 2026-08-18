@@ -715,8 +715,7 @@ def main():
         'boosting_type': 'gbdt',
         'learning_rate': 0.05,
         'num_leaves': 31,
-        'verbose': -1,
-        'is_unbalance': True
+        'verbose': -1
     }
 
     evals_result = {}
