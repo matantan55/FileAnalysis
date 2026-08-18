@@ -1,4 +1,5 @@
 """Feature extraction layer: converts AnalysisResult → fixed-length numeric vector."""
+# cache bust 2026-08-18
 
 from __future__ import annotations
 import math

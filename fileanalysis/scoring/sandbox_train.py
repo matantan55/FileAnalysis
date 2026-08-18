@@ -486,6 +486,14 @@ def main():
     else:
         console.print("[green]No new files extracted. Cache remains unchanged.[/]")
 
+    # 3.5 Deduplicate Dataset (prevents data leakage between train/val)
+    _, unique_indices = np.unique(X, axis=0, return_index=True)
+    if len(unique_indices) < len(X):
+        console.print(f"[bold yellow] Removed {len(X) - len(unique_indices)} duplicate files from dataset to prevent data leakage.[/]")
+        X = X[unique_indices]
+        y = y[unique_indices]
+        paths = paths[unique_indices]
+
     # 4. Normalize features (StandardScaler)
     feat_mean = X.mean(axis=0)
     feat_std = X.std(axis=0)
@@ -722,7 +730,7 @@ def main():
     lgb_model = lgb.train(
         params,
         lgb_train,
-        num_boost_round=500, # Increased max rounds, early stopping will halt it
+        num_boost_round=1000, # Increased max rounds, early stopping will halt it
         valid_sets=[lgb_train, lgb_val],
         callbacks=[
             lgb.record_evaluation(evals_result),
