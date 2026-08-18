@@ -1,4 +1,4 @@
-name: ThreatNet Training
+name: MalOwn Training
 
 on:
   push:
