@@ -58,7 +58,7 @@ Trained the `MalConv` neural network (on raw bytes) and `LightGBMThreatScorer` g
 Implemented a highly efficient **Incremental Learning Pipeline** in a Docker sandbox that caches extracted features and fine-tunes the PyTorch model with a replay buffer to prevent catastrophic forgetting.
 Added an **Anti-False-Positive Filter** into the ensemble scoring to ensure innocent documents and empty files are not hallucinated as malware.
 
-## How to Run FileAnalysis
+## How to Run MalOwn
 
 > **You must be in the project root directory** (`FileAnalysis/`) for all commands to work.
 

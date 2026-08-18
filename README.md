@@ -1,4 +1,4 @@
-#  FileAnalysis — Malware Threat Analysis Tool
+# MalOwn — Malware Threat Analysis Tool
 
 A CLI-based malware file analysis and threat assessment tool that combines heuristic rules with a neural network trained on real malware samples.
 
@@ -66,7 +66,7 @@ Paste a file path directly into the prompt to load it into your workspace, and t
 ### Example Output (Standard Scan)
 ```
 
-  FileAnalysis — Malware Threat Report 
+  MalOwn — Malware Threat Report 
 
  File: malware.exe
  Type: Windows Executable (application/vnd.microsoft.portable-executable)
@@ -162,7 +162,7 @@ python -m fileanalysis.cli suspicious.exe --yara-rules /path/to/rules/
 
 ## How It Works
 
-FileAnalysis runs a multi-stage pipeline on every file:
+MalOwn runs a multi-stage pipeline on every file:
 
 1. **Load** — Reads the file, detects type (PE, ELF, Mach-O, script, document)
 2. **Analyze** — Runs format-specific analyzers (hashing, entropy, advanced strings including CVE/Registry patterns, imports, sections)
@@ -179,7 +179,7 @@ Every scan produces **independent threat scores** and an ensemble score:
 | ** Heuristic** | Hand-tuned weighted formula (entropy + strings + capabilities + YARA) |
 | ** Neural Net** | 4-layer MLP trained on real malware/benign samples |
 | ** LightGBM** | Gradient boosting decision tree trained on the same feature set |
-| ** AI Insights** | Google Gemini LLM generates an executive summary of the primary threat vectors |
+| ** AI Insights** | Google Gemini LLM generates an executive summary, and local Qwen2.5-Coder analyzes suspicious assembly patterns |
 
 ### Risk Levels
 

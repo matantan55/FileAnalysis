@@ -1,6 +1,6 @@
-# FileAnalysis — Implementation Guide
+# MalOwn — Implementation Guide
 
-> A comprehensive technical reference for developers working on the FileAnalysis malware detection and threat assessment tool.
+> A comprehensive technical reference for developers working on the MalOwn malware detection and threat assessment tool.
 
 ---
 
@@ -24,7 +24,7 @@
 
 ## Project Overview
 
-FileAnalysis is a Python CLI tool that performs **static analysis** on files to determine:
+MalOwn is a Python CLI tool that performs **static analysis** on files to determine:
 - Whether a file is potentially **malicious**
 - What **capabilities** the malware has (mapped to MITRE ATT&CK)
 - How it could **affect the target environment**
@@ -67,7 +67,7 @@ It supports PE (EXE/DLL), ELF, Mach-O, scripts, and documents. It produces a thr
           
                    
             
-               Reporter     ← Terminal (Rich) + AI Insights (Gemini) or JSON
+               Reporter     ← Terminal (Rich) + AI Insights (Gemini & Qwen) or JSON
             
 ```
 
@@ -231,7 +231,7 @@ Rules are defined in `CAPABILITY_RULES` — a list of dicts mapping API names an
 
 ## Scoring System
 
-FileAnalysis has **three scoring engines** that run sequentially to provide an ensemble score:
+MalOwn has **three scoring engines** that run sequentially to provide an ensemble score:
 
 ### 1. Heuristic Scorer (`scorer.py`) — Default
 
@@ -410,6 +410,7 @@ Uses the **Rich** library to produce colorful, structured console output:
 - Header panel with file metadata
 - Color-coded risk score badge (with Neural Network and LightGBM indicators)
 - **AI Executive Insights**: Powered by Google Gemini to summarize key threat vectors
+- **Assembly Insights**: Powered by local Qwen2.5-Coder to analyze suspicious assembly instructions
 - Hash table
 - Entropy gauge
 - Capabilities list (MITRE ATT&CK-aligned)
@@ -594,6 +595,7 @@ python -m fileanalysis.scoring.train --epochs 300 --lr 0.0005
 | `torch` | PyTorch — neural network inference and training |
 | `lightgbm` | LightGBM — gradient boosting tree inference and training |
 | `google-genai` | Gemini — AI Executive Insights |
+| `transformers` | Qwen — Assembly Insights |
 
 Install with: `pip install fileanalysis[nn]` or `pip install torch>=2.0`
 
