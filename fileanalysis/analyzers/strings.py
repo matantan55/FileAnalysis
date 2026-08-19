@@ -155,7 +155,7 @@ class StringAnalyzer(BaseAnalyzer):
                 if len(decoded) >= MIN_STRING_LEN:
                     results.append(decoded)
             except Exception:
-                continue
+                pass
         return results
 
     def _classify_strings(self, strings: list[str]) -> StringCategory:
@@ -191,7 +191,7 @@ class StringAnalyzer(BaseAnalyzer):
                 if printable_ratio > 0.4:
                     valid_b64.append(b[:80] + ("..." if len(b) > 80 else ""))
             except Exception:
-                continue
+                pass
         cat.base64_blobs = valid_b64[:MAX_STRINGS_PER_CATEGORY]
 
         cat.cve_references = list(set(
@@ -206,14 +206,12 @@ class StringAnalyzer(BaseAnalyzer):
         benign_prefixes = ("0.", "127.", "255.", "224.", "239.")
         for ip_str in ips:
             ip_part = ip_str.split(":")[0]
-            if ip_part.startswith(benign_prefixes):
-                continue
-            octets = ip_part.split(".")
-            try:
-                if all(0 <= int(o) <= 255 for o in octets):
-                    valid.add(ip_str)
-            except ValueError:
-                continue
+            if not ip_part.startswith(benign_prefixes):
+                try:
+                    if all(0 <= int(o) <= 255 for o in ip_part.split(".")):
+                        valid.add(ip_str)
+                except ValueError:
+                    pass
         return list(valid)[:MAX_STRINGS_PER_CATEGORY]
 
     def _find_suspicious_commands(self, strings: list[str]) -> list[str]:
@@ -221,20 +219,17 @@ class StringAnalyzer(BaseAnalyzer):
         found = []
         for s in strings:
             s_lower = s.lower()
-            for cmd in SUSPICIOUS_COMMANDS:
-                if cmd.lower() in s_lower:
-                    found.append(s.strip()[:200])
-                    break
+            if any(cmd.lower() in s_lower for cmd in SUSPICIOUS_COMMANDS):
+                found.append(s.strip()[:200])
         return list(set(found))
 
     def _find_suspicious_apis(self, strings: list[str]) -> list[str]:
         """Find strings matching suspicious API function names."""
         found = []
         for s in strings:
-            for api in SUSPICIOUS_APIS:
-                if api in s:
-                    found.append(api)
-                    break
+            matched_api = next((api for api in SUSPICIOUS_APIS if api in s), None)
+            if matched_api:
+                found.append(matched_api)
         return list(set(found))
 
     def _generate_indicators(self, result: AnalysisResult) -> None:

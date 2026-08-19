@@ -1,4 +1,4 @@
-#  FileAnalysis — Malware Threat Analysis Tool
+# MalOwn — Malware Threat Analysis Tool
 
 A CLI-based malware file analysis and threat assessment tool that combines heuristic rules with a neural network trained on real malware samples.
 
@@ -21,7 +21,7 @@ pip install -r requirements.txt
 pip install torch>=2.0
 ```
 
-### 2. Scan a File
+### 2. Launch the Interactive Console
 
 > **Important:** You must run the command from the `FileAnalysis/` project root directory.
 
@@ -29,19 +29,44 @@ pip install torch>=2.0
 # Activate the virtual environment
 source .venv/bin/activate
 
-# Scan a file
-python -m fileanalysis.cli /path/to/suspicious/file.exe
+# Launch the interactive menu
+python -m fileanalysis.cli
 ```
 
-**Example:**
-```bash
-python -m fileanalysis.cli malware.exe
+This launches the **MalOwn Interactive Console**:
+```
+                 _|      _|            _|    _|_|                                  
+                 _|_|  _|_|    _|_|_|  _|  _|    _|  _|      _|      _|  _|_|_|    
+                 _|  _|  _|  _|    _|  _|  _|    _|  _|      _|      _|  _|    _|  
+                 _|      _|  _|    _|  _|  _|    _|    _|  _|  _|  _|    _|    _|  
+                 _|      _|    _|_|_|  _|    _|_|        _|      _|      _|    _|  
+                                                                                
+                                                                                
+                           No files currently loaded.                           
+                                                                                
+╭──────────────────────────── Interactive Console ─────────────────────────────╮
+│                                                                              │
+│    1.    Standard File Analysis         Run the full scanning pipeline       │
+│                                         with ML scoring, capabilities        │
+│                                         mapping, and YARA                    │
+│    2.    Interactive Binary Research    Open the hex viewer with             │
+│                                         disassembled code and threat         │
+│                                         annotations                          │
+│    3.    Clear Files                    Remove all loaded files from the     │
+│                                         workspace                            │
+│    4.    Quit                           Exit the application                 │
+│                                                                              │
+╰──────────────────────────────────────────────────────────────────────────────╯
+
+Select an option or paste a file path to load:
 ```
 
-**Output:**
+Paste a file path directly into the prompt to load it into your workspace, and then select an option to run analysis or research on it.
+
+### Example Output (Standard Scan)
 ```
 
-  FileAnalysis — Malware Threat Report 
+  MalOwn — Malware Threat Report 
 
  File: malware.exe
  Type: Windows Executable (application/vnd.microsoft.portable-executable)
@@ -108,33 +133,36 @@ python -m fileanalysis.cli malware.exe
 
 ```
 
-### 3. CLI Options
+### 3. Advanced CLI Options (One-Shot Mode)
+
+You can bypass the interactive menu for scripting by providing the file path directly.
 
 | Flag | Description |
 |------|-------------|
 | `--json` | Output results as JSON |
-
+| `--research` | Open interactive hex viewer directly |
 | `--yara-rules DIR` | Path to custom YARA rules directory |
 
 **Examples:**
 ```bash
+# Standard scan in one shot
+python -m fileanalysis.cli suspicious.exe
+
 # JSON output (for scripting)
 python -m fileanalysis.cli suspicious.exe --json
 
-
+# Interactive binary research mode directly
+python -m fileanalysis.cli suspicious.exe --research
 
 # Custom YARA rules
 python -m fileanalysis.cli suspicious.exe --yara-rules /path/to/rules/
-
-# Combine flags
-python -m fileanalysis.cli suspicious.exe --json
 ```
 
 ---
 
 ## How It Works
 
-FileAnalysis runs a multi-stage pipeline on every file:
+MalOwn runs a multi-stage pipeline on every file:
 
 1. **Load** — Reads the file, detects type (PE, ELF, Mach-O, script, document)
 2. **Analyze** — Runs format-specific analyzers (hashing, entropy, advanced strings including CVE/Registry patterns, imports, sections)
@@ -151,7 +179,7 @@ Every scan produces **independent threat scores** and an ensemble score:
 | ** Heuristic** | Hand-tuned weighted formula (entropy + strings + capabilities + YARA) |
 | ** Neural Net** | 4-layer MLP trained on real malware/benign samples |
 | ** LightGBM** | Gradient boosting decision tree trained on the same feature set |
-| ** AI Insights** | Google Gemini LLM generates an executive summary of the primary threat vectors |
+| ** AI Insights** | Google Gemini LLM generates an executive summary, and local Qwen2.5-Coder analyzes suspicious assembly patterns |
 
 ### Risk Levels
 
@@ -181,9 +209,24 @@ This will:
 1. Clone multiple curated cybersecurity datasets (DikeDataset, theZoo, vx-underground, Endermanch MalwareDatabase) inside the container
 2. **Incremental Extraction**: Skip files already cached in `dataset_cache.npz` and extract 30-dimensional features only from new files
 3. **Replay-Buffer Fine-Tuning**: Load the existing `threat_model_malconv.pt` weights and fine-tune using 100% of new data + a 10% replay buffer of old data to prevent catastrophic forgetting
-4. Train ThreatNet (PyTorch) and LightGBM models
-5. Save `threat_model_malconv.pt`, `threat_model_lgb.txt` and `feature_scaler.npz` to your local project
+4. Train MalConv (PyTorch) and LightGBM models
+5. Save `threat_model_malconv.pt` and `threat_model_lgb.txt` to your local project
 6. Destroy the container (and all malware) when done
+
+### Training Flags
+
+You can retrain each model independently by passing flags in your commit message:
+
+```bash
+# Retrain only the LightGBM decision tree
+git commit -m "your message --tree"
+
+# Fine-tune only the Neural Network (MalConv)
+git commit -m "your message --train"
+
+# Retrain both (default)
+git commit -m "your message --tree --train"
+```
 
 ---
 
@@ -192,7 +235,7 @@ This will:
 ```
 FileAnalysis/
  fileanalysis/
-    cli.py                    # Main CLI entry point
+    cli.py                    # Main CLI entry point (interactive + one-shot)
     loader.py                 # File loading & type detection
     analyzers/                # Format-specific analyzers
        base.py               # AnalysisResult data structure
@@ -208,14 +251,18 @@ FileAnalysis/
     intelligence/
        yara_scanner.py       # YARA rule matching
        capability_mapper.py  # MITRE ATT&CK mapping
+       ai_insights.py        # Google Gemini executive summary
+       asm_insights.py       # Local Qwen2.5-Coder assembly explanation
+    research/
+       hex_viewer.py         # Interactive hex + disassembly viewer
     scoring/
        scorer.py             # Heuristic threat scorer
-       nn_model.py           # ThreatNet neural network
+       nn_model.py           # MalConv neural network
        ml_model.py           # LightGBM tree model
        features.py           # 30-dim feature extraction
        sandbox_train.py      # Real malware training (Docker)
-       threat_model.pt       # Trained NN weights
-       threat_model_lgb.txt  # Trained LightGBM weights
+       threat_model_malconv.pt      # Trained NN weights
+       threat_model_lgb.txt         # Trained LightGBM weights
     reporting/
         terminal_report.py    # Rich terminal output
         json_report.py        # JSON output
@@ -239,6 +286,10 @@ FileAnalysis/
 | `ppdeep` | Fuzzy hashing (ssdeep) |
 | `numpy` | Feature vector computation |
 | `torch` *(optional)* | Neural network inference |
+| `lightgbm` *(optional)* | LightGBM decision tree inference |
+| `prompt_toolkit` | Arrow-key navigation in interactive menu |
+| `capstone` | Assembly disassembly in hex viewer |
+| `transformers` *(optional)* | Local Qwen2.5-Coder for assembly insights |
 
 ---
 
@@ -248,8 +299,9 @@ See [LICENSE](LICENSE) for details.
 
 ## Cloud Integration & CI/CD
 
-To ensure the neural network continually stays ahead of zero-day threats, the entire training and release lifecycle is fully automated using **GitHub Actions**:
+To ensure the models continually improve, the entire training lifecycle is automated using **GitHub Actions**:
 
-- **Continuous Model Retraining**: A GitHub Actions workflow (`.github/workflows/training.yml`) automatically triggers the Docker sandbox training pipeline using `workflow_dispatch` or pushes with `--train`.
-- **Incremental Dataset Caching**: The training pipeline uses the `actions/cache` GitHub action to persist and automatically download pre-computed dataset features (`dataset_cache.npz`) between runs. This skips the massive repository cloning and extraction phases for already processed files, extracting features only for newly pushed malware.
-- **Automated Versioning & Releases**: Upon a successful run, if the model weights (`threat_model_malconv.pt`) have improved/changed, the CI/CD pipeline automatically commits the updates back to the `main` branch and publishes a new versioned GitHub Release.
+- **Selective Model Retraining**: The workflow (`.github/workflows/training.yml`) triggers on any push where the commit message contains `--train` (retrain MalConv NN) or `--tree` (retrain LightGBM). Both flags can be combined. The workflow fires on pushes to any branch.
+- **Incremental Dataset Caching**: The training pipeline uses `actions/cache` to persist `dataset_cache.npz` between runs, skipping feature extraction for already-processed files.
+- **Frozen Scaler**: The `feature_scaler.npz` normalization parameters are written once and never overwritten. This prevents the scaler drift that would corrupt old LightGBM tree splits on incremental runs.
+- **Automated Releases**: Upon a successful run, if model weights have changed, the CI/CD pipeline automatically commits the updated weights back to the repository and publishes a new versioned GitHub Release.

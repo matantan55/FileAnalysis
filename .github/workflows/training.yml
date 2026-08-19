@@ -2,7 +2,7 @@ name: MalOwn Training
 
 on:
   push:
-    branches: [main]
+    branches: ['**']
   workflow_dispatch: # Allow manual triggering
 
 jobs:
@@ -11,7 +11,7 @@ jobs:
     # Run only if triggered manually OR if the push commit message contains --train
     if: >-
       github.event_name == 'workflow_dispatch' ||
-      (github.event_name == 'push' && contains(github.event.head_commit.message, '--train'))
+      (github.event_name == 'push' && (contains(github.event.head_commit.message, '--train') || contains(github.event.head_commit.message, '--tree')))
     permissions:
       contents: write # Required for committing files and creating releases
     
@@ -34,9 +34,22 @@ jobs:
 
       - name: Run Cloud Training Pipeline
         run: |
+          MSG="${{ github.event.head_commit.message }}"
+          ARGS=""
+          if [[ "$MSG" == *"--train"* ]]; then
+            ARGS="$ARGS --train"
+          fi
+          if [[ "$MSG" == *"--tree"* ]]; then
+            ARGS="$ARGS --tree"
+          fi
+          if [ -z "$ARGS" ]; then
+            ARGS="--train --tree"
+          fi
+          
           docker run --rm \
             -v "${{ github.workspace }}:/workspace" \
-            fileanalysis-sandbox
+            fileanalysis-sandbox \
+            sh -c "pip install -r requirements-sandbox.txt && PYTHONPATH=/workspace python -m fileanalysis.scoring.sandbox_train $ARGS"
 
       - name: Check for Model Updates
         id: check_changes
@@ -56,7 +69,7 @@ jobs:
           git config --local user.email "github-actions[bot]@users.noreply.github.com"
           git config --local user.name "github-actions[bot]"
           git add fileanalysis/scoring/threat_model_malconv.pt fileanalysis/scoring/threat_model_lgb.txt fileanalysis/scoring/feature_scaler.npz
-          git commit -m "🤖 Automate ThreatNet model retraining"
+          git commit -m "🤖 Automate MalOwn model retraining"
           git push
 
       - name: Create GitHub Release
@@ -69,6 +82,6 @@ jobs:
           RELEASE_TAG="${DATE_TAG}.${{ github.run_number }}"
           
           gh release create "$RELEASE_TAG" \
-            --title "ThreatNet Model Release $RELEASE_TAG" \
-            --notes "Automated ThreatNet retraining run on aggregated malware datasets." \
+            --title "MalOwn Model Release $RELEASE_TAG" \
+            --notes "Automated MalOwn retraining run on aggregated malware datasets." \
             fileanalysis/scoring/threat_model_malconv.pt fileanalysis/scoring/threat_model_lgb.txt fileanalysis/scoring/feature_scaler.npz

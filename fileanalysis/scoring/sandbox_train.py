@@ -19,6 +19,8 @@ import os
 os.environ["KMP_DUPLICATE_LIB_OK"] = "TRUE"
 os.environ["OMP_NUM_THREADS"] = "1"
 
+import itertools
+
 import subprocess
 import concurrent.futures
 import hashlib
@@ -28,6 +30,9 @@ from pathlib import Path
 import logging
 import warnings
 import lief
+
+import argparse
+
 
 # Suppress noisy parsing warnings from libraries dealing with malformed malware
 logging.getLogger("pefile").setLevel(logging.CRITICAL)
@@ -140,6 +145,7 @@ def clone_zoo():
     console.print(f"[bold]Found {len(zips)} zips in theZoo to extract.[/]")
 
     extracted = 0
+    capped_zips = zips[:MAX_ZOO_FILES]
     with Progress(
         SpinnerColumn(),
         TextColumn("[bold yellow]Extracting theZoo"),
@@ -147,10 +153,8 @@ def clone_zoo():
         TextColumn("[progress.percentage]{task.percentage:>3.0f}%"),
         TimeRemainingColumn(),
     ) as progress:
-        task_zoo = progress.add_task("Extracting...", total=min(len(zips), MAX_ZOO_FILES))
-        for zf in zips:
-            if extracted >= MAX_ZOO_FILES:
-                break
+        task_zoo = progress.add_task("Extracting...", total=len(capped_zips))
+        for zf in capped_zips:
             out_dir = extract_dir / zf.stem
             out_dir.mkdir(exist_ok=True)
             try:
@@ -233,6 +237,31 @@ def fetch_github_datasets():
 
 
 
+def _collect_from_dir(sdir: Path, seen_hashes: set, collected: int, max_count: int) -> int:
+    """Collect valid files from a single system directory, deduplicating by hash."""
+    if not sdir.exists():
+        return collected
+    for f in sdir.rglob("*"):
+        if collected >= max_count:
+            return collected
+        if not f.is_file():
+            pass
+        else:
+            try:
+                size = f.stat().st_size
+                if 100 <= size <= 100_000_000:
+                    file_hash = hashlib.md5(f.read_bytes()).hexdigest()
+                    if file_hash not in seen_hashes:
+                        seen_hashes.add(file_hash)
+                        dest = SYSTEM_BENIGN_DIR / f"{file_hash}_{f.name}"
+                        if not dest.exists():
+                            dest.symlink_to(f)
+                        collected += 1
+            except Exception:
+                pass
+    return collected
+
+
 def collect_system_benign():
     """Collect real benign files from the Docker container's OS.
     
@@ -259,32 +288,12 @@ def collect_system_benign():
 
     collected = 0
     seen_hashes = set()
+    max_count = 5000
     for sdir in system_dirs:
-        if not sdir.exists():
-            continue
-        for f in sdir.rglob("*"):
-            if not f.is_file():
-                continue
-            try:
-                size = f.stat().st_size
-                if size < 100 or size > 100_000_000:  # skip trivially small or huge files
-                    continue
-                # Deduplicate by content hash
-                file_hash = hashlib.md5(f.read_bytes()).hexdigest()
-                if file_hash in seen_hashes:
-                    continue
-                seen_hashes.add(file_hash)
-
-                dest = SYSTEM_BENIGN_DIR / f"{file_hash}_{f.name}"
-                if not dest.exists():
-                    dest.symlink_to(f)  # symlink to avoid copying gigabytes
-                collected += 1
-            except Exception:
-                pass
-            if collected >= 5000:
-                break
-        if collected >= 5000:
-            break
+        if collected >= max_count:
+            pass
+        else:
+            collected = _collect_from_dir(sdir, seen_hashes, collected, max_count)
 
     console.print(f"[green] Collected {collected} system benign files.[/]")
 
@@ -364,24 +373,26 @@ def extract_features(file_paths, label, progress, task):
     return features_list, labels_list, paths_list
 
 
+def _valid_files_gen(directory: Path):
+    """Generator that yields valid files from a directory."""
+    for f in directory.rglob("*"):
+        if f.is_file() and f.stat().st_size > 100:
+            yield f
+
+
 def collect_files(directory: Path, max_files: int = 10000) -> list[Path]:
     """Recursively collect files from a directory, skipping directories and tiny files."""
-    files = []
     if not directory.exists():
-        return files
-    for f in directory.rglob("*"):
-        if f.is_file() and f.stat().st_size > 100:  # skip empty/tiny files
-            files.append(f)
-            if len(files) >= max_files:
-                break
-    return files
+        return []
+    return list(itertools.islice(_valid_files_gen(directory), max_files))
 
 
 # 
 # Training
 # 
-def main():
-    console.rule("[bold cyan] ThreatNet Multi-Dataset Training[/]")
+def main(train_nn=True, train_tree=True):
+    console.rule("[bold cyan] MalOwn Multi-Dataset Training[/]")
+
 
     cache_file = "dataset_cache.npz"
     local_cache_path = Path("/workspace") / cache_file
@@ -479,10 +490,18 @@ def main():
     else:
         console.print("[green]No new files extracted. Cache remains unchanged.[/]")
 
-    # 4. Normalize features (StandardScaler)
-    feat_mean = X.mean(axis=0)
-    feat_std = X.std(axis=0)
-    feat_std[feat_std < 1e-8] = 1.0  # avoid division by zero for constant features
+
+    # 4. Normalize features (StandardScaler) - FROZEN to prevent drift
+    if WORKSPACE_SCALER_PATH.exists():
+        data = np.load(WORKSPACE_SCALER_PATH)
+        feat_mean, feat_std = data["mean"], data["std"]
+        console.print("[bold green] Using FROZEN feature scaler from disk.[/]")
+    else:
+        feat_mean = X.mean(axis=0)
+        feat_std = X.std(axis=0)
+        feat_std[feat_std < 1e-8] = 1.0  # avoid division by zero for constant features
+        console.print("[bold yellow] Created NEW feature scaler.[/]")
+    
     X_norm = (X - feat_mean) / feat_std
 
     # 5. Train/validation split (80/20, stratified)
@@ -507,273 +526,289 @@ def main():
 
     console.print(f"  Train: {len(X_train)} | Val: {len(X_val)}")
 
-    class RawByteDataset(Dataset):
-        def __init__(self, file_paths, labels, max_len=MAX_LEN):
-            self.file_paths = file_paths
-            self.labels = labels
-            self.max_len = max_len
+    if train_nn:
+        class RawByteDataset(Dataset):
+            def __init__(self, file_paths, labels, max_len=MAX_LEN):
+                self.file_paths = file_paths
+                self.labels = labels
+                self.max_len = max_len
             
-        def __len__(self):
-            return len(self.file_paths)
+            def __len__(self):
+                return len(self.file_paths)
             
-        def __getitem__(self, idx):
-            path = self.file_paths[idx]
-            tensor = np.full((self.max_len,), 256, dtype=np.int16)
+            def __getitem__(self, idx):
+                path = self.file_paths[idx]
+                tensor = np.full((self.max_len,), 256, dtype=np.int16)
+                try:
+                    with open(path, "rb") as f:
+                        b = f.read(self.max_len)
+                        length = len(b)
+                        if length > 0:
+                            tensor[:length] = np.frombuffer(b, dtype=np.uint8)
+                except Exception:
+                    pass
+                lbl = self.labels[idx]
+                if isinstance(lbl, np.ndarray) and lbl.ndim > 0:
+                    lbl = lbl.item()
+                return torch.tensor(tensor, dtype=torch.long), torch.tensor(lbl, dtype=torch.float32).view(-1)
+
+        # 6. Train MalConv (PyTorch)
+        console.print("[bold cyan] Training MalConv (Deep Learning) on raw bytes…[/]")
+        torch.set_num_threads(2) # Prevent CPU thread explosion segfault in Docker
+        model = MalConv()
+    
+        # Check if we should fine-tune
+        fine_tuning = False
+        if WORKSPACE_MODEL_PATH.exists():
             try:
-                with open(path, "rb") as f:
-                    b = f.read(self.max_len)
-                    length = len(b)
-                    if length > 0:
-                        tensor[:length] = np.frombuffer(b, dtype=np.uint8)
-            except Exception:
-                pass
-            lbl = self.labels[idx]
-            if isinstance(lbl, np.ndarray) and lbl.ndim > 0:
-                lbl = lbl.item()
-            return torch.tensor(tensor, dtype=torch.long), torch.tensor(lbl, dtype=torch.float32).view(-1)
+                state_dict = torch.load(WORKSPACE_MODEL_PATH, map_location="cpu", weights_only=True)
+                model.load_state_dict(state_dict)
+                fine_tuning = True
+                console.print("[bold green] Loaded existing MalConv weights for Fine-Tuning![/]")
+            except Exception as e:
+                console.print(f"[yellow] Failed to load existing weights: {e}[/]")
 
-    # 6. Train MalConv (PyTorch)
-    console.print("[bold cyan] Training MalConv (Deep Learning) on raw bytes…[/]")
-    import torch
-    torch.set_num_threads(2) # Prevent CPU thread explosion segfault in Docker
-    model = MalConv()
-    
-    # Check if we should fine-tune
-    fine_tuning = False
-    if WORKSPACE_MODEL_PATH.exists() and len(new_paths) > 0:
-        try:
-            state_dict = torch.load(WORKSPACE_MODEL_PATH, map_location="cpu", weights_only=True)
-            model.load_state_dict(state_dict)
-            fine_tuning = True
-            console.print("[bold green] Loaded existing MalConv weights for Fine-Tuning![/]")
-        except Exception as e:
-            console.print(f"[yellow] Failed to load existing weights: {e}[/]")
+        optimizer = torch.optim.Adam(model.parameters(), lr=0.001 if not fine_tuning else 0.0001, weight_decay=1e-4)
+        criterion = nn.BCELoss()
+        scheduler = torch.optim.lr_scheduler.CosineAnnealingLR(optimizer, T_max=20)
 
-    optimizer = torch.optim.Adam(model.parameters(), lr=0.001 if not fine_tuning else 0.0001, weight_decay=1e-4)
-    criterion = nn.BCELoss()
-    scheduler = torch.optim.lr_scheduler.CosineAnnealingLR(optimizer, T_max=20)
-
-    # If fine-tuning, restrict the PyTorch training set to ONLY new files + 10% old replay buffer
-    if fine_tuning:
-        console.print("[bold]Building incremental dataset (100% New + 10% Old Replay Buffer)...[/]")
-        new_paths_set = set(new_paths)
+        # If fine-tuning, restrict the PyTorch training set to ONLY new files + 10% old replay buffer
+        if fine_tuning:
+            console.print("[bold]Building incremental dataset (100% New + 10% Old Replay Buffer)...[/]")
+            new_paths_set = set(new_paths)
         
-        new_train_idx = [i for i, p in enumerate(paths_train) if p in new_paths_set]
-        old_train_idx = [i for i, p in enumerate(paths_train) if p not in new_paths_set]
+            new_train_idx = [i for i, p in enumerate(paths_train) if p in new_paths_set]
+            old_train_idx = [i for i, p in enumerate(paths_train) if p not in new_paths_set]
         
-        # Select 10% of old data randomly
-        if len(old_train_idx) > 0:
-            replay_count = max(1, int(len(old_train_idx) * 0.1))
-            replay_idx = np.random.choice(old_train_idx, replay_count, replace=False).tolist()
-        else:
-            replay_idx = []
+            # Select 10% of old data randomly
+            if len(old_train_idx) > 0:
+                replay_count = max(1, int(len(old_train_idx) * 0.1))
+                replay_idx = np.random.choice(old_train_idx, replay_count, replace=False).tolist()
+            else:
+                replay_idx = []
             
-        incremental_train_idx = np.array(new_train_idx + replay_idx, dtype=int)
-        np.random.shuffle(incremental_train_idx)
+            incremental_train_idx = np.array(new_train_idx + replay_idx, dtype=int)
+            np.random.shuffle(incremental_train_idx)
         
-        mc_paths_train = paths_train[incremental_train_idx]
-        mc_y_train = y_train[incremental_train_idx]
-        epochs = 3 # Fast fine-tuning
-    else:
-        mc_paths_train = paths_train
-        mc_y_train = y_train
-        epochs = 5 # Full train
+            mc_paths_train = paths_train[incremental_train_idx]
+            mc_y_train = y_train[incremental_train_idx]
+            epochs = 3 # Fast fine-tuning
+        else:
+            mc_paths_train = paths_train
+            mc_y_train = y_train
+            epochs = 5 # Full train
         
-    train_ds = RawByteDataset(mc_paths_train, mc_y_train)
-    val_ds = RawByteDataset(paths_val, y_val)
-    train_loader = DataLoader(train_ds, batch_size=16, shuffle=True)
-    val_loader = DataLoader(val_ds, batch_size=16, shuffle=False)
+        train_ds = RawByteDataset(mc_paths_train, mc_y_train)
+        val_ds = RawByteDataset(paths_val, y_val)
+        train_loader = DataLoader(train_ds, batch_size=16, shuffle=True)
+        val_loader = DataLoader(val_ds, batch_size=16, shuffle=False)
 
-    best_val_acc = 0.0
-    best_state = None
+        best_val_acc = 0.0
+        best_state = None
     
-    if len(train_loader) > 0:
-        console.rule(f"[bold cyan]{'Fine-Tuning' if fine_tuning else 'Training'} for {epochs} epochs")
-        for epoch in range(epochs):
-            model.train()
-            total_loss = 0
-            for batch_idx, (batch_X, batch_y) in enumerate(train_loader):
-                optimizer.zero_grad()
-                out = model(batch_X)
-                loss = criterion(out, batch_y)
-                loss.backward()
-                optimizer.step()
-                total_loss += loss.item()
+        if len(train_loader) > 0:
+            console.rule(f"[bold cyan]{'Fine-Tuning' if fine_tuning else 'Training'} for {epochs} epochs")
+            for epoch in range(epochs):
+                model.train()
+                total_loss = 0
+                for batch_idx, (batch_X, batch_y) in enumerate(train_loader):
+                    optimizer.zero_grad()
+                    out = model(batch_X)
+                    loss = criterion(out, batch_y)
+                    loss.backward()
+                    optimizer.step()
+                    total_loss += loss.item()
                 
-                if (batch_idx + 1) % 100 == 0:
-                    print(f"  [Epoch {epoch+1}] Batch {batch_idx+1}/{len(train_loader)} - Loss: {loss.item():.4f}", flush=True)
+                    if (batch_idx + 1) % 100 == 0:
+                        print(f"  [Epoch {epoch+1}] Batch {batch_idx+1}/{len(train_loader)} - Loss: {loss.item():.4f}", flush=True)
 
-            avg_loss = total_loss / len(train_loader)
-            scheduler.step()
+                avg_loss = total_loss / len(train_loader)
+                scheduler.step()
 
-            # Validation accuracy
-            model.eval()
-            val_correct = 0
-            val_total = 0
-            with torch.no_grad():
-                for v_batch_X, v_batch_y in val_loader:
-                    v_out = model(v_batch_X)
-                    v_preds = (v_out >= 0.5).float()
-                    val_correct += (v_preds == v_batch_y).float().sum().item()
-                    val_total += len(v_batch_y)
+                # Validation accuracy
+                model.eval()
+                val_correct = 0
+                val_total = 0
+                with torch.no_grad():
+                    for v_batch_X, v_batch_y in val_loader:
+                        v_out = model(v_batch_X)
+                        v_preds = (v_out >= 0.5).float()
+                        val_correct += (v_preds == v_batch_y).float().sum().item()
+                        val_total += len(v_batch_y)
                     
-            val_acc = (val_correct / max(val_total, 1)) * 100
+                val_acc = (val_correct / max(val_total, 1)) * 100
 
-            if val_acc > best_val_acc:
-                best_val_acc = val_acc
-                best_state = {k: v.clone() for k, v in model.state_dict().items()}
+                if val_acc > best_val_acc:
+                    best_val_acc = val_acc
+                    best_state = {k: v.clone() for k, v in model.state_dict().items()}
 
-            lr = optimizer.param_groups[0]["lr"]
-            print(f"[*] Epoch {epoch+1}/{epochs} Completed | Avg Loss: {avg_loss:.4f} | Val Acc: {val_acc:.1f}% | LR: {lr:.6f}", flush=True)
+                lr = optimizer.param_groups[0]["lr"]
+                print(f"[*] Epoch {epoch+1}/{epochs} Completed | Avg Loss: {avg_loss:.4f} | Val Acc: {val_acc:.1f}% | LR: {lr:.6f}", flush=True)
 
-        # Load best model
-        if best_state:
-            model.load_state_dict(best_state)
-    else:
-        console.print("[yellow] No data for PyTorch training loop.[/]")
+            # Load best model
+            if best_state:
+                model.load_state_dict(best_state)
+        else:
+            console.print("[yellow] No data for PyTorch training loop.[/]")
 
-    # 7. Final evaluation
-    console.rule("[bold]Final Evaluation")
-    model.eval()
-    val_preds_list = []
-    val_true_list = []
-    with torch.no_grad():
-        for v_batch_X, v_batch_y in val_loader:
-            v_out = model(v_batch_X)
-            v_preds = (v_out >= 0.5).float()
-            val_preds_list.append(v_preds)
-            val_true_list.append(v_batch_y)
+        # 7. Final evaluation
+        console.rule("[bold]Final Evaluation")
+        model.eval()
+        val_preds_list = []
+        val_true_list = []
+        with torch.no_grad():
+            for v_batch_X, v_batch_y in val_loader:
+                v_out = model(v_batch_X)
+                v_preds = (v_out >= 0.5).float()
+                val_preds_list.append(v_preds)
+                val_true_list.append(v_batch_y)
 
-    val_preds_np = torch.cat(val_preds_list).view(-1).numpy()
-    val_true_np = torch.cat(val_true_list).view(-1).numpy()
+        val_preds_np = torch.cat(val_preds_list).view(-1).numpy()
+        val_true_np = torch.cat(val_true_list).view(-1).numpy()
 
-    tp = ((val_preds_np == 1) & (val_true_np == 1)).sum().item()
-    tn = ((val_preds_np == 0) & (val_true_np == 0)).sum().item()
-    fp = ((val_preds_np == 1) & (val_true_np == 0)).sum().item()
-    fn = ((val_preds_np == 0) & (val_true_np == 1)).sum().item()
+        tp = ((val_preds_np == 1) & (val_true_np == 1)).sum().item()
+        tn = ((val_preds_np == 0) & (val_true_np == 0)).sum().item()
+        fp = ((val_preds_np == 1) & (val_true_np == 0)).sum().item()
+        fn = ((val_preds_np == 0) & (val_true_np == 1)).sum().item()
 
-    accuracy = (tp + tn) / max(tp + tn + fp + fn, 1) * 100
-    precision = tp / max(tp + fp, 1) * 100
-    recall = tp / max(tp + fn, 1) * 100
-    f1 = 2 * precision * recall / max(precision + recall, 1)
-    fpr = fp / max(fp + tn, 1) * 100
-    fnr = fn / max(fn + tp, 1) * 100
-    specificity = tn / max(tn + fp, 1) * 100
+        accuracy = (tp + tn) / max(tp + tn + fp + fn, 1) * 100
+        precision = tp / max(tp + fp, 1) * 100
+        recall = tp / max(tp + fn, 1) * 100
+        f1 = 2 * precision * recall / max(precision + recall, 1)
+        fpr = fp / max(fp + tn, 1) * 100
+        fnr = fn / max(fn + tp, 1) * 100
+        specificity = tn / max(tn + fp, 1) * 100
 
-    metrics_table = Table(title=" Validation Metrics")
-    metrics_table.add_column("Metric", style="bold")
-    metrics_table.add_column("Value", style="cyan")
-    metrics_table.add_row("Accuracy", f"{accuracy:.1f}%")
-    metrics_table.add_row("Precision", f"{precision:.1f}%")
-    metrics_table.add_row("Recall", f"{recall:.1f}%")
-    metrics_table.add_row("F1 Score", f"{f1:.1f}%")
-    metrics_table.add_row("False Positive Rate (FPR)", f"{fpr:.1f}%")
-    metrics_table.add_row("False Negative Rate (FNR)", f"{fnr:.1f}%")
-    metrics_table.add_row("Specificity (TNR)", f"{specificity:.1f}%")
-    metrics_table.add_row("Best Val Acc", f"{best_val_acc:.1f}%")
-    console.print(metrics_table)
+        metrics_table = Table(title=" Validation Metrics")
+        metrics_table.add_column("Metric", style="bold")
+        metrics_table.add_column("Value", style="cyan")
+        metrics_table.add_row("Accuracy", f"{accuracy:.1f}%")
+        metrics_table.add_row("Precision", f"{precision:.1f}%")
+        metrics_table.add_row("Recall", f"{recall:.1f}%")
+        metrics_table.add_row("F1 Score", f"{f1:.1f}%")
+        metrics_table.add_row("False Positive Rate (FPR)", f"{fpr:.1f}%")
+        metrics_table.add_row("False Negative Rate (FNR)", f"{fnr:.1f}%")
+        metrics_table.add_row("Specificity (TNR)", f"{specificity:.1f}%")
+        metrics_table.add_row("Best Val Acc", f"{best_val_acc:.1f}%")
+        console.print(metrics_table)
 
-    cm_table = Table(title=" Confusion Matrix")
-    cm_table.add_column("", style="bold")
-    cm_table.add_column("Pred Benign", style="green")
-    cm_table.add_column("Pred Malware", style="red")
-    cm_table.add_row("Actual Benign", str(tn), str(fp))
-    cm_table.add_row("Actual Malware", str(fn), str(tp))
-    console.print(cm_table)
+        cm_table = Table(title=" Confusion Matrix")
+        cm_table.add_column("", style="bold")
+        cm_table.add_column("Pred Benign", style="green")
+        cm_table.add_column("Pred Malware", style="red")
+        cm_table.add_row("Actual Benign", str(tn), str(fp))
+        cm_table.add_row("Actual Malware", str(fn), str(tp))
+        console.print(cm_table)
 
-    fp_mask = (val_preds_np == 1) & (val_true_np == 0)
-    fn_mask = (val_preds_np == 0) & (val_true_np == 1)
+        fp_mask = (val_preds_np == 1) & (val_true_np == 0)
+        fn_mask = (val_preds_np == 0) & (val_true_np == 1)
     
-    fp_paths = paths_val[fp_mask]
-    fn_paths = paths_val[fn_mask]
+        fp_paths = paths_val[fp_mask]
+        fn_paths = paths_val[fn_mask]
     
-    fp_file = DATASET_ROOT / "false_positives.txt"
-    fn_file = DATASET_ROOT / "false_negatives.txt"
+        fp_file = DATASET_ROOT / "false_positives.txt"
+        fn_file = DATASET_ROOT / "false_negatives.txt"
     
-    with open(fp_file, "w") as f:
-        f.write("\n".join(fp_paths))
-    with open(fn_file, "w") as f:
-        f.write("\n".join(fn_paths))
+        with open(fp_file, "w") as f:
+            f.write("\n".join(fp_paths))
+        with open(fn_file, "w") as f:
+            f.write("\n".join(fn_paths))
         
-    console.print(f"[bold yellow] Exported {len(fp_paths)} false positives to {fp_file}[/]")
-    console.print(f"[bold yellow] Exported {len(fn_paths)} false negatives to {fn_file}[/]")
+        console.print(f"[bold yellow] Exported {len(fp_paths)} false positives to {fp_file}[/]")
+        console.print(f"[bold yellow] Exported {len(fn_paths)} false negatives to {fn_file}[/]")
 
-    # 8. Train LightGBM model
-    console.rule("[bold]Training LightGBM Baseline")
-    lgb_train = lgb.Dataset(X_train, y_train)
-    lgb_val = lgb.Dataset(X_val, y_val, reference=lgb_train)
+    if train_tree:
+        # 8. Train LightGBM model
+        console.rule("[bold]Training LightGBM Baseline")
+        lgb_train = lgb.Dataset(X_train, y_train)
+        lgb_val = lgb.Dataset(X_val, y_val, reference=lgb_train)
 
-    params = {
-        'objective': 'binary',
-        'metric': 'binary_logloss',
-        'boosting_type': 'gbdt',
-        'learning_rate': 0.05,
-        'num_leaves': 31,
-        'verbose': -1
-    }
+        params = {
+            'objective': 'binary',
+            'metric': 'binary_logloss',
+            'boosting_type': 'gbdt',
+            'learning_rate': 0.05,
+            'num_leaves': 31,
+            'verbose': -1
+        }
 
-    # Train LightGBM incrementally without early stopping
-    lgb_init_model = None
-    if WORKSPACE_LGB_MODEL_PATH.exists() and len(new_paths) > 0:
-        lgb_init_model = str(WORKSPACE_LGB_MODEL_PATH)
-        console.print("[bold green] Continuing LightGBM training from existing model...[/]")
+        # Train LightGBM incrementally
+        lgb_init_model = None
+        if WORKSPACE_LGB_MODEL_PATH.exists():
+            lgb_init_model = str(WORKSPACE_LGB_MODEL_PATH)
+            console.print("[bold green] Continuing LightGBM training from existing model...[/]")
         
-    evals_result = {}
-    lgb_model = lgb.train(
-        params,
-        lgb_train,
-        num_boost_round=100, # Add 100 new trees each run
-        valid_sets=[lgb_train, lgb_val],
-        init_model=lgb_init_model,
-        callbacks=[
-            lgb.record_evaluation(evals_result)
-        ]
-    )
+        evals_result = {}
+        lgb_model = lgb.train(
+            params,
+            lgb_train,
+            num_boost_round=100, # Add up to 100 new trees
+            valid_sets=[lgb_train, lgb_val],
+            init_model=lgb_init_model,
+            callbacks=[
+                lgb.early_stopping(stopping_rounds=10, verbose=False),
+                lgb.record_evaluation(evals_result)
+            ]
+        )
 
-    # 9. Evaluate LightGBM
-    console.rule("[bold]LightGBM Final Evaluation")
-    val_preds_lgb_prob = lgb_model.predict(X_val)
-    val_preds_lgb = (val_preds_lgb_prob >= 0.5).astype(int)
+        # 9. Evaluate LightGBM
+        console.rule("[bold]LightGBM Final Evaluation")
+        val_preds_lgb_prob = lgb_model.predict(X_val)
+        val_preds_lgb = (val_preds_lgb_prob >= 0.5).astype(int)
 
-    tp_lgb = ((val_preds_lgb == 1) & (val_true_np == 1)).sum().item()
-    tn_lgb = ((val_preds_lgb == 0) & (val_true_np == 0)).sum().item()
-    fp_lgb = ((val_preds_lgb == 1) & (val_true_np == 0)).sum().item()
-    fn_lgb = ((val_preds_lgb == 0) & (val_true_np == 1)).sum().item()
+        tp_lgb = ((val_preds_lgb == 1) & (y_val == 1)).sum().item()
+        tn_lgb = ((val_preds_lgb == 0) & (y_val == 0)).sum().item()
+        fp_lgb = ((val_preds_lgb == 1) & (y_val == 0)).sum().item()
+        fn_lgb = ((val_preds_lgb == 0) & (y_val == 1)).sum().item()
 
-    acc_lgb = (tp_lgb + tn_lgb) / max(tp_lgb + tn_lgb + fp_lgb + fn_lgb, 1) * 100
-    prec_lgb = tp_lgb / max(tp_lgb + fp_lgb, 1) * 100
-    rec_lgb = tp_lgb / max(tp_lgb + fn_lgb, 1) * 100
-    f1_lgb = 2 * prec_lgb * rec_lgb / max(prec_lgb + rec_lgb, 1)
-    fpr_lgb = fp_lgb / max(fp_lgb + tn_lgb, 1) * 100
-    fnr_lgb = fn_lgb / max(fn_lgb + tp_lgb, 1) * 100
-    spec_lgb = tn_lgb / max(tn_lgb + fp_lgb, 1) * 100
+        acc_lgb = (tp_lgb + tn_lgb) / max(tp_lgb + tn_lgb + fp_lgb + fn_lgb, 1) * 100
+        prec_lgb = tp_lgb / max(tp_lgb + fp_lgb, 1) * 100
+        rec_lgb = tp_lgb / max(tp_lgb + fn_lgb, 1) * 100
+        f1_lgb = 2 * prec_lgb * rec_lgb / max(prec_lgb + rec_lgb, 1)
+        fpr_lgb = fp_lgb / max(fp_lgb + tn_lgb, 1) * 100
+        fnr_lgb = fn_lgb / max(fn_lgb + tp_lgb, 1) * 100
+        spec_lgb = tn_lgb / max(tn_lgb + fp_lgb, 1) * 100
 
-    metrics_table_lgb = Table(title=" LightGBM Validation Metrics")
-    metrics_table_lgb.add_column("Metric", style="bold")
-    metrics_table_lgb.add_column("Value", style="cyan")
-    metrics_table_lgb.add_row("Accuracy", f"{acc_lgb:.1f}%")
-    metrics_table_lgb.add_row("Precision", f"{prec_lgb:.1f}%")
-    metrics_table_lgb.add_row("Recall", f"{rec_lgb:.1f}%")
-    metrics_table_lgb.add_row("F1 Score", f"{f1_lgb:.1f}%")
-    metrics_table_lgb.add_row("False Positive Rate (FPR)", f"{fpr_lgb:.1f}%")
-    metrics_table_lgb.add_row("False Negative Rate (FNR)", f"{fnr_lgb:.1f}%")
-    metrics_table_lgb.add_row("Specificity (TNR)", f"{spec_lgb:.1f}%")
-    console.print(metrics_table_lgb)
+        metrics_table_lgb = Table(title=" LightGBM Validation Metrics")
+        metrics_table_lgb.add_column("Metric", style="bold")
+        metrics_table_lgb.add_column("Value", style="cyan")
+        metrics_table_lgb.add_row("Accuracy", f"{acc_lgb:.1f}%")
+        metrics_table_lgb.add_row("Precision", f"{prec_lgb:.1f}%")
+        metrics_table_lgb.add_row("Recall", f"{rec_lgb:.1f}%")
+        metrics_table_lgb.add_row("F1 Score", f"{f1_lgb:.1f}%")
+        metrics_table_lgb.add_row("False Positive Rate (FPR)", f"{fpr_lgb:.1f}%")
+        metrics_table_lgb.add_row("False Negative Rate (FNR)", f"{fnr_lgb:.1f}%")
+        metrics_table_lgb.add_row("Specificity (TNR)", f"{spec_lgb:.1f}%")
+        console.print(metrics_table_lgb)
 
     # 10. Save models and scaler
     console.rule("[bold]Saving")
     WORKSPACE_MODEL_PATH.parent.mkdir(parents=True, exist_ok=True)
-    torch.save(model.state_dict(), WORKSPACE_MODEL_PATH)
-    console.print(f"[bold green] PyTorch Model saved to {WORKSPACE_MODEL_PATH}[/]")
+    if train_nn:
+        torch.save(model.state_dict(), WORKSPACE_MODEL_PATH)
+        console.print(f"[bold green] PyTorch Model saved to {WORKSPACE_MODEL_PATH}[/]")
 
-    lgb_model.save_model(str(WORKSPACE_LGB_MODEL_PATH))
-    console.print(f"[bold green] LightGBM Model saved to {WORKSPACE_LGB_MODEL_PATH}[/]")
+    if train_tree:
+        lgb_model.save_model(str(WORKSPACE_LGB_MODEL_PATH))
+        console.print(f"[bold green] LightGBM Model saved to {WORKSPACE_LGB_MODEL_PATH}[/]")
 
-    np.savez(WORKSPACE_SCALER_PATH, mean=feat_mean, std=feat_std)
-    console.print(f"[bold green] Scaler saved to {WORKSPACE_SCALER_PATH}[/]")
+
+
+    if train_tree and not WORKSPACE_SCALER_PATH.exists():
+        np.savez(WORKSPACE_SCALER_PATH, mean=feat_mean, std=feat_std)
+        console.print(f"[bold green] Scaler saved to {WORKSPACE_SCALER_PATH}[/]")
 
     console.rule("[bold green] Training complete!")
 
-
 if __name__ == "__main__":
-    main()
+    parser = argparse.ArgumentParser()
+    parser.add_argument("--train", action="store_true", help="Train Neural Network (MalConv)")
+    parser.add_argument("--tree", action="store_true", help="Train LightGBM Tree")
+    args = parser.parse_args()
+    
+    # If neither flag is passed, default to both for local runs
+    if not args.train and not args.tree:
+        args.train = True
+        args.tree = True
+        
+    main(train_nn=args.train, train_tree=args.tree)

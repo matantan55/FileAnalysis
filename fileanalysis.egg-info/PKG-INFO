@@ -16,6 +16,8 @@ Requires-Dist: transformers>=4.0.0
 Requires-Dist: lightgbm>=4.0.0
 Requires-Dist: scikit-learn>=1.3.0
 Requires-Dist: pyfiglet>=1.0.4
+Requires-Dist: capstone>=5.0.9
+Requires-Dist: prompt-toolkit>=3.0.52
 Provides-Extra: nn
 Requires-Dist: torch>=2.0; extra == "nn"
 
@@ -42,7 +44,7 @@ pip install -r requirements.txt
 pip install torch>=2.0
 ```
 
-### 2. Scan a File
+### 2. Launch the Interactive Console
 
 > **Important:** You must run the command from the `FileAnalysis/` project root directory.
 
@@ -50,16 +52,41 @@ pip install torch>=2.0
 # Activate the virtual environment
 source .venv/bin/activate
 
-# Scan a file
-python -m fileanalysis.cli /path/to/suspicious/file.exe
+# Launch the interactive menu
+python -m fileanalysis.cli
 ```
 
-**Example:**
-```bash
-python -m fileanalysis.cli malware.exe
+This launches the **MalOwn Interactive Console**:
+```
+                 _|      _|            _|    _|_|                                  
+                 _|_|  _|_|    _|_|_|  _|  _|    _|  _|      _|      _|  _|_|_|    
+                 _|  _|  _|  _|    _|  _|  _|    _|  _|      _|      _|  _|    _|  
+                 _|      _|  _|    _|  _|  _|    _|    _|  _|  _|  _|    _|    _|  
+                 _|      _|    _|_|_|  _|    _|_|        _|      _|      _|    _|  
+                                                                                
+                                                                                
+                           No files currently loaded.                           
+                                                                                
+╭──────────────────────────── Interactive Console ─────────────────────────────╮
+│                                                                              │
+│    1.    Standard File Analysis         Run the full scanning pipeline       │
+│                                         with ML scoring, capabilities        │
+│                                         mapping, and YARA                    │
+│    2.    Interactive Binary Research    Open the hex viewer with             │
+│                                         disassembled code and threat         │
+│                                         annotations                          │
+│    3.    Clear Files                    Remove all loaded files from the     │
+│                                         workspace                            │
+│    4.    Quit                           Exit the application                 │
+│                                                                              │
+╰──────────────────────────────────────────────────────────────────────────────╯
+
+Select an option or paste a file path to load:
 ```
 
-**Output:**
+Paste a file path directly into the prompt to load it into your workspace, and then select an option to run analysis or research on it.
+
+### Example Output (Standard Scan)
 ```
 
   FileAnalysis — Malware Threat Report 
@@ -129,26 +156,29 @@ python -m fileanalysis.cli malware.exe
 
 ```
 
-### 3. CLI Options
+### 3. Advanced CLI Options (One-Shot Mode)
+
+You can bypass the interactive menu for scripting by providing the file path directly.
 
 | Flag | Description |
 |------|-------------|
 | `--json` | Output results as JSON |
-
+| `--research` | Open interactive hex viewer directly |
 | `--yara-rules DIR` | Path to custom YARA rules directory |
 
 **Examples:**
 ```bash
+# Standard scan in one shot
+python -m fileanalysis.cli suspicious.exe
+
 # JSON output (for scripting)
 python -m fileanalysis.cli suspicious.exe --json
 
-
+# Interactive binary research mode directly
+python -m fileanalysis.cli suspicious.exe --research
 
 # Custom YARA rules
 python -m fileanalysis.cli suspicious.exe --yara-rules /path/to/rules/
-
-# Combine flags
-python -m fileanalysis.cli suspicious.exe --json
 ```
 
 ---
@@ -202,7 +232,7 @@ This will:
 1. Clone multiple curated cybersecurity datasets (DikeDataset, theZoo, vx-underground, Endermanch MalwareDatabase) inside the container
 2. **Incremental Extraction**: Skip files already cached in `dataset_cache.npz` and extract 30-dimensional features only from new files
 3. **Replay-Buffer Fine-Tuning**: Load the existing `threat_model_malconv.pt` weights and fine-tune using 100% of new data + a 10% replay buffer of old data to prevent catastrophic forgetting
-4. Train ThreatNet (PyTorch) and LightGBM models
+4. Train MalOwn (PyTorch) and LightGBM models
 5. Save `threat_model_malconv.pt`, `threat_model_lgb.txt` and `feature_scaler.npz` to your local project
 6. Destroy the container (and all malware) when done
 
@@ -231,7 +261,7 @@ FileAnalysis/
        capability_mapper.py  # MITRE ATT&CK mapping
     scoring/
        scorer.py             # Heuristic threat scorer
-       nn_model.py           # ThreatNet neural network
+       nn_model.py           # MalOwn neural network
        ml_model.py           # LightGBM tree model
        features.py           # 30-dim feature extraction
        sandbox_train.py      # Real malware training (Docker)

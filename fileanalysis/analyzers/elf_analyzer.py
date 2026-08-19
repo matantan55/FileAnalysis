@@ -181,21 +181,19 @@ class ELFAnalyzer(BaseAnalyzer):
         mitigations = {}
 
         # Canary check (typically presence of __stack_chk_fail symbol)
-        has_canary = False
-        for symbol in binary.symbols:
-            if "__stack_chk_fail" in symbol.name:
-                has_canary = True
-                break
+        has_canary = any("__stack_chk_fail" in symbol.name for symbol in binary.symbols)
         mitigations["stack_canary"] = has_canary
 
         # NX (No Execute) check
         nx_enabled = False
         try:
-            for segment in binary.segments:
-                if segment.type == lief.ELF.Segment.TYPE.GNU_STACK:
-                    # GNU_STACK segment flags: R, W, but not X (typically 1 | 2 = 3, execute is 4)
-                    nx_enabled = not (segment.flags & int(lief.ELF.Segment.FLAGS.X))
-                    break
+            gnu_stack = next(
+                (seg for seg in binary.segments if seg.type == lief.ELF.Segment.TYPE.GNU_STACK),
+                None,
+            )
+            if gnu_stack is not None:
+                # GNU_STACK segment flags: R, W, but not X (typically 1 | 2 = 3, execute is 4)
+                nx_enabled = not (gnu_stack.flags & int(lief.ELF.Segment.FLAGS.X))
         except Exception:
             pass
         mitigations["nx"] = nx_enabled

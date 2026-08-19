@@ -71,8 +71,6 @@ class EntropyAnalyzer(BaseAnalyzer):
         entropy = 0.0
 
         for count in counts.values():
-            if count == 0:
-                continue
             probability = count / length
             entropy -= probability * math.log2(probability)
 

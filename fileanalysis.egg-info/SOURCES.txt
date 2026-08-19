@@ -27,6 +27,8 @@ fileanalysis/intelligence/yara_scanner.py
 fileanalysis/reporting/__init__.py
 fileanalysis/reporting/json_report.py
 fileanalysis/reporting/terminal_report.py
+fileanalysis/research/__init__.py
+fileanalysis/research/hex_viewer.py
 fileanalysis/scoring/__init__.py
 fileanalysis/scoring/features.py
 fileanalysis/scoring/ml_model.py

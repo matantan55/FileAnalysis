@@ -135,30 +135,4 @@ class TerminalReporter:
         }
         return mapping.get(level, "white")
 
-    def _render_plain(self, result: AnalysisResult) -> None:
-        """Plain terminal prints fallback if rich is not available."""
-        print("=" * 60)
-        print("  FileAnalysis — Malware Threat Report")
-        print("=" * 60)
-        print(f"File: {result.metadata.name}")
-        print(f"Type: {result.metadata.magic_description}")
-        print(f"Size: {result.metadata.size_human}")
-        print("-" * 60)
-        print(f"RISK SCORE: {result.risk_score}/100 — {result.risk_level.value.upper()}")
-        print("-" * 60)
-        print(f"MD5:    {result.hashes.md5}")
-        print(f"SHA256: {result.hashes.sha256}")
-        print(f"Entropy: {result.entropy.overall}")
-        print("-" * 60)
-        if result.capabilities:
-            print("Threat Capabilities:")
-            for cap in result.capabilities:
-                print(f"  - {cap.name} ({cap.technique_id}): {cap.description}")
-        print("\nEnvironment Impact:")
-        for i, imp in enumerate(result.environment_impact, 1):
-            print(f"  {i}. {imp}")
-        if result.errors:
-            print("\nErrors:")
-            for err in result.errors:
-                print(f"  ! {err}")
-        print("=" * 60)
+
