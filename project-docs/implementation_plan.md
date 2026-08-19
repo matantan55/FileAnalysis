@@ -83,33 +83,38 @@ FileAnalysis/
 
  fileanalysis/               # Main Python package
      __init__.py
-     cli.py                  # Click CLI entry point
+     cli.py                  # Click CLI entry point (interactive + one-shot)
      loader.py               # File loading, type detection, metadata
     
      analyzers/              # All analysis modules
-        base.py             # AnalysisResult, dataclasses, BaseAnalyzer ABC
-        hashing.py          # MD5, SHA-1, SHA-256, ssdeep, imphash
-        entropy.py          # Shannon entropy analysis
-        strings.py          # String extraction and classification
-        pe_analyzer.py      # Windows PE (EXE) analysis
-        dll_analyzer.py     # DLL-specific threat analysis
-        elf_analyzer.py     # Linux ELF analysis
-        macho_analyzer.py   # macOS Mach-O analysis
-        script_analyzer.py  # Script file analysis (Python, PS, Bash, etc.)
-        document_analyzer.py # Office/PDF document analysis
+         base.py             # AnalysisResult, dataclasses, BaseAnalyzer ABC
+         hashing.py          # MD5, SHA-1, SHA-256, ssdeep, imphash
+         entropy.py          # Shannon entropy analysis
+         strings.py          # String extraction and classification
+         pe_analyzer.py      # Windows PE (EXE) analysis
+         dll_analyzer.py     # DLL-specific threat analysis
+         elf_analyzer.py     # Linux ELF analysis
+         macho_analyzer.py   # macOS Mach-O analysis
+         script_analyzer.py  # Script file analysis (Python, PS, Bash, etc.)
+         document_analyzer.py # Office/PDF document analysis
     
      intelligence/           # Threat intelligence modules
-        yara_scanner.py     # YARA rule matching engine
-        capability_mapper.py # MITRE ATT&CK capability mapping
+         yara_scanner.py     # YARA rule matching engine
+         capability_mapper.py # MITRE ATT&CK capability mapping
+         ai_insights.py      # Google Gemini executive threat summary
+         asm_insights.py     # Local Qwen2.5-Coder assembly explanation
+    
+     research/               # Binary research tools
+         hex_viewer.py       # Interactive hex + disassembly viewer (Capstone)
     
      scoring/                # Threat scoring engines
-        scorer.py           # Heuristic threat scorer
-        features.py         # Feature extraction for ML models
-        nn_model.py         # MalOwn MLP model + inference wrapper
-        ml_model.py         # LightGBM tree model + inference wrapper
-        sandbox_train.py    # Real malware training (Docker)
-        threat_model.pt     # Pre-trained NN weights
-        threat_model_lgb.txt# Pre-trained LightGBM weights
+         scorer.py           # Heuristic threat scorer
+         features.py         # Feature extraction for ML models
+         nn_model.py         # MalConv model + inference wrapper
+         ml_model.py         # LightGBM tree model + inference wrapper
+         sandbox_train.py    # Real malware training (Docker)
+         threat_model_malconv.pt    # Pre-trained MalConv weights
+         threat_model_lgb.txt       # Pre-trained LightGBM weights
     
      reporting/              # Output formatting
          terminal_report.py  # Rich terminal output
@@ -380,21 +385,34 @@ Machine Learning models trained primarily on executable binaries (PE/ELF) often 
 
 ### Cloud Training Pipeline & Incremental Learning (`sandbox_train.py` & `.github/workflows/training.yml`)
 
-The model is retrained automatically using a robust CI/CD pipeline. To drastically reduce training time and compute resources, the system utilizes an **Incremental Learning** approach:
+The model is retrained automatically using a robust CI/CD pipeline.
+
+#### Training Flags
+
+The training pipeline accepts two independent flags, passed via the **commit message**:
+
+| Flag in commit | Effect |
+|---------------|--------|
+| `--train` | Fine-tunes the MalConv Neural Network only |
+| `--tree` | Retrains the LightGBM decision tree only |
+| Both / neither | Runs both pipelines |
+
+The workflow fires on pushes to **any branch**.
+
+#### Incremental Learning
 
 1. **Incremental Feature Extraction**: 
-   - The pipeline loads the previously extracted features from `/workspace/dataset_cache.npz`.
-   - It cross-references the cached file paths against the newly downloaded dataset.
-   - The computationally heavy feature extraction (YARA, Hashing, Entropy) runs **only** on the newly discovered files.
-   - The new features are concatenated with the old ones, and the cache is updated.
+   - The pipeline loads previously extracted features from `/workspace/dataset_cache.npz`.
+   - It cross-references cached file paths against the newly downloaded dataset.
+   - Feature extraction (YARA, Hashing, Entropy) runs **only** on newly discovered files.
+   - New features are concatenated with the old ones and the cache is updated.
 
 2. **Incremental Model Training**:
-   - **LightGBM**: Since LightGBM trains extremely rapidly on tabular features, it is fully retrained on the *entire* combined dataset (Old + New) to ensure maximum tree accuracy without performance penalties.
-   - **PyTorch (MalConv)**: Deep Learning on raw bytes is the primary bottleneck. The script loads the existing `threat_model_malconv.pt` weights and **fine-tunes** the model using only the new data (alongside a small 10% replay buffer of old data to prevent catastrophic forgetting).
-   - If no new data is found during the pipeline run, the script exits early to save CI minutes.
+   - **LightGBM (`--tree`)**: Uses `init_model` to bolt new trees on top of the existing model (up to 100 extra trees per run, with early stopping after 10 non-improving rounds). The **scaler is always loaded from the frozen `feature_scaler.npz` on disk** — it is never recalculated. This prevents normalization drift from corrupting the old trees' split thresholds.
+   - **PyTorch/MalConv (`--train`)**: Loads the existing `threat_model_malconv.pt` weights and fine-tunes using 100% new data + a 10% replay buffer of old data to prevent catastrophic forgetting. Fine-tuning uses a reduced learning rate (`0.0001`) and runs for only 3 epochs.
 
-- **GitHub Actions**: A cron job triggers the `training.yml` workflow at midnight, spinning up a Docker sandbox, restoring the `dataset_cache.npz` via `actions/cache`, and executing `sandbox_train.py`.
-- **Automated Releases**: If the model accuracy improves or new data was incorporated, the workflow automatically commits `threat_model.pt` and `feature_scaler.npz`, and creates a new versioned GitHub Release.
+- **GitHub Actions**: The `training.yml` workflow builds the Docker sandbox, restores `dataset_cache.npz` via `actions/cache`, and executes `sandbox_train.py` with the appropriate flags.
+- **Automated Releases**: If model weights changed, the workflow commits the updated files and creates a new versioned GitHub Release.
 
 ### Retraining on Real Data
 
@@ -588,16 +606,16 @@ python -m fileanalysis.scoring.train --epochs 300 --lr 0.0005
 | `ppdeep` | Fuzzy hashing (ssdeep) |
 | `numpy` | Feature vector computation |
 
-### Optional (NN scoring only)
+### Optional (NN scoring / research only)
 
 | Package | Purpose |
 |---------|---------|
-| `torch` | PyTorch — neural network inference and training |
+| `torch` | PyTorch — MalConv neural network inference and training |
 | `lightgbm` | LightGBM — gradient boosting tree inference and training |
 | `google-genai` | Gemini — AI Executive Insights |
-| `transformers` | Qwen — Assembly Insights |
-
-Install with: `pip install fileanalysis[nn]` or `pip install torch>=2.0`
+| `transformers` | Qwen2.5-Coder — local assembly insights |
+| `capstone` | Capstone — assembly disassembly in hex viewer |
+| `prompt_toolkit` | Arrow-key navigation in interactive menu |
 
 ---
 

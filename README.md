@@ -209,9 +209,24 @@ This will:
 1. Clone multiple curated cybersecurity datasets (DikeDataset, theZoo, vx-underground, Endermanch MalwareDatabase) inside the container
 2. **Incremental Extraction**: Skip files already cached in `dataset_cache.npz` and extract 30-dimensional features only from new files
 3. **Replay-Buffer Fine-Tuning**: Load the existing `threat_model_malconv.pt` weights and fine-tune using 100% of new data + a 10% replay buffer of old data to prevent catastrophic forgetting
-4. Train MalOwn (PyTorch) and LightGBM models
-5. Save `threat_model_malconv.pt`, `threat_model_lgb.txt` and `feature_scaler.npz` to your local project
+4. Train MalConv (PyTorch) and LightGBM models
+5. Save `threat_model_malconv.pt` and `threat_model_lgb.txt` to your local project
 6. Destroy the container (and all malware) when done
+
+### Training Flags
+
+You can retrain each model independently by passing flags in your commit message:
+
+```bash
+# Retrain only the LightGBM decision tree
+git commit -m "your message --tree"
+
+# Fine-tune only the Neural Network (MalConv)
+git commit -m "your message --train"
+
+# Retrain both (default)
+git commit -m "your message --tree --train"
+```
 
 ---
 
@@ -220,7 +235,7 @@ This will:
 ```
 FileAnalysis/
  fileanalysis/
-    cli.py                    # Main CLI entry point
+    cli.py                    # Main CLI entry point (interactive + one-shot)
     loader.py                 # File loading & type detection
     analyzers/                # Format-specific analyzers
        base.py               # AnalysisResult data structure
@@ -236,14 +251,18 @@ FileAnalysis/
     intelligence/
        yara_scanner.py       # YARA rule matching
        capability_mapper.py  # MITRE ATT&CK mapping
+       ai_insights.py        # Google Gemini executive summary
+       asm_insights.py       # Local Qwen2.5-Coder assembly explanation
+    research/
+       hex_viewer.py         # Interactive hex + disassembly viewer
     scoring/
        scorer.py             # Heuristic threat scorer
-       nn_model.py           # MalOwn neural network
+       nn_model.py           # MalConv neural network
        ml_model.py           # LightGBM tree model
        features.py           # 30-dim feature extraction
        sandbox_train.py      # Real malware training (Docker)
-       threat_model.pt       # Trained NN weights
-       threat_model_lgb.txt  # Trained LightGBM weights
+       threat_model_malconv.pt      # Trained NN weights
+       threat_model_lgb.txt         # Trained LightGBM weights
     reporting/
         terminal_report.py    # Rich terminal output
         json_report.py        # JSON output
@@ -267,6 +286,10 @@ FileAnalysis/
 | `ppdeep` | Fuzzy hashing (ssdeep) |
 | `numpy` | Feature vector computation |
 | `torch` *(optional)* | Neural network inference |
+| `lightgbm` *(optional)* | LightGBM decision tree inference |
+| `prompt_toolkit` | Arrow-key navigation in interactive menu |
+| `capstone` | Assembly disassembly in hex viewer |
+| `transformers` *(optional)* | Local Qwen2.5-Coder for assembly insights |
 
 ---
 
@@ -276,8 +299,9 @@ See [LICENSE](LICENSE) for details.
 
 ## Cloud Integration & CI/CD
 
-To ensure the neural network continually stays ahead of zero-day threats, the entire training and release lifecycle is fully automated using **GitHub Actions**:
+To ensure the models continually improve, the entire training lifecycle is automated using **GitHub Actions**:
 
-- **Continuous Model Retraining**: A GitHub Actions workflow (`.github/workflows/training.yml`) automatically triggers the Docker sandbox training pipeline using `workflow_dispatch` or pushes with `--train`.
-- **Incremental Dataset Caching**: The training pipeline uses the `actions/cache` GitHub action to persist and automatically download pre-computed dataset features (`dataset_cache.npz`) between runs. This skips the massive repository cloning and extraction phases for already processed files, extracting features only for newly pushed malware.
-- **Automated Versioning & Releases**: Upon a successful run, if the model weights (`threat_model_malconv.pt`) have improved/changed, the CI/CD pipeline automatically commits the updates back to the `main` branch and publishes a new versioned GitHub Release.
+- **Selective Model Retraining**: The workflow (`.github/workflows/training.yml`) triggers on any push where the commit message contains `--train` (retrain MalConv NN) or `--tree` (retrain LightGBM). Both flags can be combined. The workflow fires on pushes to any branch.
+- **Incremental Dataset Caching**: The training pipeline uses `actions/cache` to persist `dataset_cache.npz` between runs, skipping feature extraction for already-processed files.
+- **Frozen Scaler**: The `feature_scaler.npz` normalization parameters are written once and never overwritten. This prevents the scaler drift that would corrupt old LightGBM tree splits on incremental runs.
+- **Automated Releases**: Upon a successful run, if model weights have changed, the CI/CD pipeline automatically commits the updated weights back to the repository and publishes a new versioned GitHub Release.
