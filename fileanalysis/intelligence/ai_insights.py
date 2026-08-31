@@ -9,7 +9,7 @@ import numpy as np
 if TYPE_CHECKING:
     from fileanalysis.analyzers.base import AnalysisResult
 
-from fileanalysis.scoring.features import FeatureExtractor
+from fileanalysis.scoring.ml_model import LightGBMThreatScorer
 
 logger = logging.getLogger(__name__)
 
@@ -54,14 +54,15 @@ class AIInsightsGenerator:
 
     def _load_model(self):
         """Lazily load the LightGBM scorer."""
+        if self._scorer is False:
+            raise RuntimeError("LightGBM scorer previously failed to load.")
         if self._scorer is None:
             try:
-                from fileanalysis.scoring.ml_model import LightGBMThreatScorer
                 self._scorer = LightGBMThreatScorer()
                 logger.info("ML Insight engine initialized.")
-            except Exception as e:
-                logger.error("Failed to load LightGBMThreatScorer: %s", e)
-                raise e
+            except Exception:
+                self._scorer = False
+                raise
 
     def generate(self, result: AnalysisResult) -> str:
         """Generate a threat summary based on the highest-contributing features."""

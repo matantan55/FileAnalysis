@@ -168,3 +168,51 @@ python -m fileanalysis.cli /path/to/file.exe --research
 git commit -m "your message --tree"   # rebuild LightGBM
 git commit -m "your message --train"  # fine-tune MalConv
 ```
+
+---
+
+## 7. Model Context Protocol (MCP) Server
+
+MalOwn now includes a production-grade MCP server using the official low-level `mcp` SDK, allowing AI agents to connect and use its analysis tools directly.
+
+### Dual-Transport Support
+- **Local Execution:** Uses standard `stdio` transport.
+- **Remote Execution:** Uses Server-Sent Events (SSE) via `SseServerTransport` and `uvicorn`/`starlette`.
+
+### Available Tools
+- `analyze_file(file_path, yara_rules)`: Runs the full scanning pipeline.
+- `get_binary_annotations(file_path)`: Extracts suspicious byte patterns and strings.
+- `extract_control_flow_graph(file_path, start_offset)`: Computes an intra-procedural CFG.
+- `get_hex_dump(file_path, offset, size)`: Generates a raw hex dump.
+
+### Usage
+```bash
+# Local Mode (Default)
+uv run fileanalysis-mcp --transport stdio
+
+# Remote Mode (SSE)
+uv run fileanalysis-mcp --transport sse --port 8000
+```
+
+---
+
+## 8. MCP Server Hardening & Pipeline Extraction
+
+The MCP server was refactored for production quality:
+
+### Shared Pipeline (`pipeline.py`)
+The analysis logic that was duplicated between `cli.py` and `mcp_server.py` was extracted into a new `fileanalysis/pipeline.py` module with a single `run_pipeline()` function. Both entry points now call this shared function, eliminating the DRY violation.
+
+### Improvements Applied
+| Change | Description |
+|--------|-------------|
+| **Error handling** | All tool handlers return structured JSON error responses instead of crashing the server |
+| **Hex dump bug fix** | Fixed escaped `\\n` that rendered hex dumps as a single line |
+| **Logging** | Added `malown.mcp` and `malown.pipeline` loggers with configurable `--log-level` flag |
+| **Path validation** | File paths are resolved and validated before any I/O |
+| **Richer schemas** | Tool input schemas include `description` fields on every parameter |
+| **SSE security** | Disabled `debug=True` on the Starlette app to prevent stack trace leaks |
+
+**Files added:** [`pipeline.py`](../fileanalysis/pipeline.py)
+**Files changed:** [`mcp_server.py`](../fileanalysis/mcp_server.py), [`cli.py`](../fileanalysis/cli.py)
+

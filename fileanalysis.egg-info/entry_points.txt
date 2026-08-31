@@ -1,2 +1,3 @@
 [console_scripts]
 fileanalysis = fileanalysis.cli:cli
+fileanalysis-mcp = fileanalysis.mcp_server:main

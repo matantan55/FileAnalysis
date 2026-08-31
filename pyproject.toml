@@ -21,10 +21,14 @@ dependencies = [
     "capstone>=5.0.9",
     "prompt-toolkit>=3.0.52",
     "torch>=2.0",
+    "mcp",
+    "starlette",
+    "uvicorn",
 ]
 
 [project.scripts]
 fileanalysis = "fileanalysis.cli:cli"
+fileanalysis-mcp = "fileanalysis.mcp_server:main"
 
 [build-system]
 requires = ["setuptools>=68.0"]

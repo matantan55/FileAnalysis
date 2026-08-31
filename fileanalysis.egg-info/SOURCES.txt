@@ -1,8 +1,10 @@
+LICENSE
 README.md
 pyproject.toml
 fileanalysis/__init__.py
 fileanalysis/cli.py
 fileanalysis/loader.py
+fileanalysis/mcp_server.py
 fileanalysis.egg-info/PKG-INFO
 fileanalysis.egg-info/SOURCES.txt
 fileanalysis.egg-info/dependency_links.txt
@@ -22,6 +24,7 @@ fileanalysis/analyzers/script_analyzer.py
 fileanalysis/analyzers/strings.py
 fileanalysis/intelligence/__init__.py
 fileanalysis/intelligence/ai_insights.py
+fileanalysis/intelligence/asm_insights.py
 fileanalysis/intelligence/capability_mapper.py
 fileanalysis/intelligence/yara_scanner.py
 fileanalysis/reporting/__init__.py

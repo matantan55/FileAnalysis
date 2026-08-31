@@ -69,6 +69,9 @@ It supports PE (EXE/DLL), ELF, Mach-O, scripts, and documents. It produces a thr
             
                Reporter     ← Terminal (Rich) + AI Insights (Gemini & Qwen) or JSON
             
+                     ↓
+
+             MCP Server (mcp_server.py) ← Exposes tools via stdio and SSE
 ```
 
 ---
@@ -85,6 +88,8 @@ FileAnalysis/
      __init__.py
      cli.py                  # Click CLI entry point (interactive + one-shot)
      loader.py               # File loading, type detection, metadata
+     pipeline.py             # Shared analysis pipeline (single source of truth)
+     mcp_server.py           # MCP server (stdio + SSE transports)
     
      analyzers/              # All analysis modules
          base.py             # AnalysisResult, dataclasses, BaseAnalyzer ABC
@@ -119,6 +124,8 @@ FileAnalysis/
      reporting/              # Output formatting
          terminal_report.py  # Rich terminal output
          json_report.py      # JSON export
+     
+     mcp_server.py           # Model Context Protocol (MCP) server
 ```
 
 ---
@@ -626,3 +633,22 @@ python -m fileanalysis.scoring.train --epochs 300 --lr 0.0005
 3. **Optional heavy dependencies** — PyTorch is lazy-imported only when `--nn` is used.
 4. **Graceful degradation** — If any analyzer fails, the error is logged to `result.errors` and the pipeline continues.
 5. **Dual scoring** — Heuristic and NN scorers have the same API (`calculate_score(result)`) and are interchangeable.
+
+---
+
+## 14. Model Context Protocol (MCP) Integration
+
+MalOwn provides an MCP server (`fileanalysis/mcp_server.py`) using the official low-level `mcp` SDK to expose its analysis capabilities to AI agents.
+
+**Architecture:**
+- The analysis pipeline is extracted into a shared `fileanalysis/pipeline.py` module (`run_pipeline()`), used by both `cli.py` and `mcp_server.py` to eliminate code duplication.
+- The MCP server uses `mcp.server.Server` with explicit `@app.list_tools()` and `@app.call_tool()` handlers.
+
+**Implementation Details:**
+- **Tool schemas** include rich `description` fields on every parameter for better AI agent comprehension.
+- **Structured error handling:** All tool handlers are wrapped in try/except blocks that return JSON error responses instead of crashing the server.
+- **File path validation:** Paths are resolved and validated (existence, regular file check) before any I/O.
+- **Logging:** Uses Python's `logging` module (`malown.mcp` / `malown.pipeline`) for full observability.
+- **Transports:** Implements a dual-transport system via `argparse`:
+  - `--transport stdio`: Uses `stdio_server()` (default, for local IDE integration).
+  - `--transport sse`: Uses `SseServerTransport` coupled with `starlette` and `uvicorn` (debug mode disabled).

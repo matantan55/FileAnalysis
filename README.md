@@ -160,6 +160,31 @@ python -m fileanalysis.cli suspicious.exe --yara-rules /path/to/rules/
 
 ---
 
+## 4. Model Context Protocol (MCP) Server
+
+MalOwn includes a production-grade MCP server that allows AI assistants (like Claude Desktop or Cursor) to execute analysis pipelines and binary research tools directly.
+
+The server supports two transports:
+- **`stdio`** (default): For local processes that communicate via standard input/output.
+- **`sse`** (Server-Sent Events): For remote clients via HTTP.
+
+**Available MCP Tools:**
+- `analyze_file`: Runs the full scanning pipeline.
+- `get_binary_annotations`: Extracts suspicious byte patterns and headers.
+- `extract_control_flow_graph`: Computes CFG basic blocks.
+- `get_hex_dump`: Generates raw hex dumps.
+
+**Usage:**
+```bash
+# Run locally (stdio)
+uv run fileanalysis-mcp --transport stdio
+
+# Run remotely (HTTP SSE)
+uv run fileanalysis-mcp --transport sse --port 8000
+```
+
+---
+
 ## How It Works
 
 MalOwn runs a multi-stage pipeline on every file:
@@ -232,11 +257,12 @@ git commit -m "your message --tree --train"
 
 ## Project Structure
 
-```
 FileAnalysis/
  fileanalysis/
     cli.py                    # Main CLI entry point (interactive + one-shot)
     loader.py                 # File loading & type detection
+    pipeline.py               # Shared analysis pipeline (used by CLI & MCP)
+    mcp_server.py             # MCP server (stdio + SSE transports)
     analyzers/                # Format-specific analyzers
        base.py               # AnalysisResult data structure
        entropy.py            # Entropy analysis
@@ -290,6 +316,9 @@ FileAnalysis/
 | `prompt_toolkit` | Arrow-key navigation in interactive menu |
 | `capstone` | Assembly disassembly in hex viewer |
 | `transformers` *(optional)* | Local Qwen2.5-Coder for assembly insights |
+| `mcp` | Model Context Protocol SDK for the MCP server |
+| `starlette` | ASGI framework for the SSE transport |
+| `uvicorn` | ASGI server for remote MCP connections |
 
 ---
 
