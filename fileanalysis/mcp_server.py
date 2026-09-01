@@ -118,6 +118,11 @@ async def list_tools() -> list[types.Tool]:
                         "type": "integer",
                         "description": "Byte offset in the file where disassembly begins.",
                     },
+                    "is_rva": {
+                        "type": "boolean",
+                        "description": "Set to true if start_offset is a Relative Virtual Address (RVA) (e.g. from an entry point) so it can be resolved to a file offset.",
+                        "default": False,
+                    },
                 },
                 "required": ["file_path", "start_offset"],
             },
@@ -220,11 +225,41 @@ def _handle_get_binary_annotations(arguments: dict) -> list[types.TextContent]:
     return [types.TextContent(type="text", text=json.dumps(output))]
 
 
+def _rva_to_file_offset(rva: int, pe) -> int | None:
+    """Resolve an RVA to a file offset using the PE section table."""
+    for sec in pe.sections:
+        va_start = sec.VirtualAddress
+        # max() guards against packers/compilers that leave virtual_size at 0
+        va_end = va_start + max(sec.Misc_VirtualSize, sec.SizeOfRawData)
+
+        if va_start <= rva < va_end:
+            delta = rva - va_start
+            if delta >= sec.SizeOfRawData:
+                # RVA points into zero-padded tail (e.g. .bss) - no file bytes here
+                return None
+            return sec.PointerToRawData + delta
+    return None
+
+
 def _handle_extract_control_flow_graph(arguments: dict) -> list[types.TextContent]:
     """Extract the CFG at a given offset."""
     path = _validate_file_path(arguments["file_path"])
     start_offset = arguments["start_offset"]
+    is_rva = arguments.get("is_rva", False)
     data = path.read_bytes()
+
+    if is_rva:
+        try:
+            import pefile
+            pe = pefile.PE(data=data)
+            resolved = _rva_to_file_offset(start_offset, pe)
+            if resolved is None:
+                return _error_response(f"RVA 0x{start_offset:X} could not be resolved to a file bytes offset (it may be in a .bss section or invalid).")
+            logger.info("Resolved RVA 0x%X to file offset 0x%X", start_offset, resolved)
+            start_offset = resolved
+        except Exception as e:
+            logger.warning("Failed to parse PE for RVA resolution: %s", e)
+            # Fall back to trying it as a raw offset
 
     disasm = Disassembler(data)
     blocks = disasm.extract_cfg(start_offset)

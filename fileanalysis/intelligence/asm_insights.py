@@ -71,6 +71,7 @@ class ASMInsightsGenerator:
                 max_new_tokens=150,
                 temperature=0.2,
                 do_sample=True,
+                repetition_penalty=1.3,
                 pad_token_id=self.tokenizer.eos_token_id
             )
         
@@ -122,6 +123,7 @@ class ASMInsightsGenerator:
                 max_new_tokens=200,
                 temperature=0.2,
                 do_sample=True,
+                repetition_penalty=1.3,
                 pad_token_id=self.tokenizer.eos_token_id
             )
 

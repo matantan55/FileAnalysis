@@ -3,6 +3,11 @@
 from __future__ import annotations
 
 import logging
+import os
+
+# Prevent OpenMP segmentation fault on macOS when LightGBM and PyTorch coexist
+os.environ["KMP_DUPLICATE_LIB_OK"] = "TRUE"
+os.environ["OMP_NUM_THREADS"] = "1"
 
 from fileanalysis.loader import load_file
 from fileanalysis.analyzers.base import AnalysisResult, RiskLevel
